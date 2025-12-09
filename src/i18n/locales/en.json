@@ -43,7 +43,8 @@
     "build": "Build",
     "development": "Development",
     "license": "License",
-    "developedBy": "Developed by"
+    "developedBy": "Developed by",
+    "install": "Install"
   },
   "nav": {
     "home": "Home",
@@ -724,10 +725,11 @@
     "alreadyInstalled": "This modpack is already installed. Select a version to create a new instance.",
     "selectVersionInstall": "Select a version to install",
     "noVersionAvailable": "No version available",
-    "installModpack": "Installing modpack",
-    "downloadingMods": "1. Downloading mods",
-    "installingMinecraft": "2. Installing Minecraft",
+    "installModpack": "Install Modpack",
+    "downloadingMods": "Downloading mods",
+    "installingMinecraft": "Installing Minecraft",
     "installedSuccess": "Modpack installed successfully!",
+    "installSuccess": "Modpack installed successfully!",
     "starting": "Starting...",
     "page": "Page {current} of {total}",
     "allLoaders": "All loaders",
@@ -736,7 +738,17 @@
     "categoryKitchenSink": "Kitchen Sink",
     "categoryLightweight": "Lightweight",
     "categoryMultiplayer": "Multiplayer",
-    "categoryQuests": "Quests"
+    "categoryQuests": "Quests",
+    "details": "Modpack Details",
+    "installed": "Installed",
+    "installing": "Installing Modpack",
+    "selectVersion": "Select a version",
+    "versionInfo": "{type} - Published {date}",
+    "gallery": "Gallery",
+    "links": "Links",
+    "description": "Description",
+    "license": "License",
+    "viewDetails": "View Details"
   },
   "config": {
     "loadError": "Error loading",

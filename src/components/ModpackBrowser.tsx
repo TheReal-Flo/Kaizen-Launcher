@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react"
+import { useNavigate } from "react-router-dom"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { toast } from "sonner"
-import { Search, Download, Loader2, Package, ChevronLeft, ChevronRight, X, SlidersHorizontal, Check, RefreshCw } from "lucide-react"
+import { Search, Download, Loader2, Package, ChevronLeft, ChevronRight, X, SlidersHorizontal, Check, RefreshCw, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -111,6 +112,7 @@ const LOADER_FILTERS = [
 
 export function ModpackBrowser({ onInstalled }: ModpackBrowserProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [searchResults, setSearchResults] = useState<ModpackSearchResult[]>([])
@@ -540,7 +542,11 @@ export function ModpackBrowser({ onInstalled }: ModpackBrowserProps) {
             {searchResults.map((modpack) => {
               const isInstalled = installedModpackIds.has(modpack.project_id)
               return (
-                <Card key={modpack.project_id} className="overflow-hidden hover:bg-accent/50 transition-colors">
+                <Card
+                  key={modpack.project_id}
+                  className="overflow-hidden hover:bg-accent/50 transition-colors cursor-pointer"
+                  onClick={() => navigate(`/browse/modpack/${modpack.project_id}`)}
+                >
                   <CardContent className="p-3">
                     <div className="flex gap-3">
                       {/* Icon */}
@@ -568,26 +574,42 @@ export function ModpackBrowser({ onInstalled }: ModpackBrowserProps) {
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <h4 className="font-medium text-sm truncate">{modpack.title}</h4>
-                            <p className="text-xs text-muted-foreground">par {modpack.author}</p>
+                            <p className="text-xs text-muted-foreground">{t("modrinth.by")} {modpack.author}</p>
                           </div>
-                          <Button
-                            size="sm"
-                            variant={isInstalled ? "outline" : "default"}
-                            className="gap-1 flex-shrink-0"
-                            onClick={() => handleSelectModpack(modpack)}
-                          >
-                            {isInstalled ? (
-                              <>
-                                <RefreshCw className="h-3 w-3" />
-                                Autre version
-                              </>
-                            ) : (
-                              <>
-                                <Download className="h-3 w-3" />
-                                Installer
-                              </>
-                            )}
-                          </Button>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="gap-1 h-8 px-2"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigate(`/browse/modpack/${modpack.project_id}`)
+                              }}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={isInstalled ? "outline" : "default"}
+                              className="gap-1"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleSelectModpack(modpack)
+                              }}
+                            >
+                              {isInstalled ? (
+                                <>
+                                  <RefreshCw className="h-3 w-3" />
+                                  {t("modpack.otherVersion")}
+                                </>
+                              ) : (
+                                <>
+                                  <Download className="h-3 w-3" />
+                                  {t("common.install")}
+                                </>
+                              )}
+                            </Button>
+                          </div>
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
                           {modpack.description}
@@ -596,7 +618,7 @@ export function ModpackBrowser({ onInstalled }: ModpackBrowserProps) {
                           {isInstalled && (
                             <Badge variant="default" className="text-xs bg-green-500/10 text-green-600 border-green-500/20">
                               <Check className="h-2.5 w-2.5 mr-1" />
-                              Installe
+                              {t("modpack.installed")}
                             </Badge>
                           )}
                           <Badge variant="outline" className="text-xs">
