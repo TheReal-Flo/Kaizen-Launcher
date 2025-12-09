@@ -36,6 +36,8 @@
     "add": "Add",
     "account": "account",
     "openFolder": "Open folder",
+    "enable": "Enable",
+    "disable": "Disable",
     "clear": "Clear",
     "location": "Location",
     "other": "Other",
@@ -44,7 +46,8 @@
     "development": "Development",
     "license": "License",
     "developedBy": "Developed by",
-    "install": "Install"
+    "install": "Install",
+    "update": "Update"
   },
   "nav": {
     "home": "Home",
@@ -104,6 +107,7 @@
     "deleteConfirm": "Are you sure you want to delete this instance?",
     "settings": "Instance Settings",
     "mods": "Mods",
+    "plugins": "Plugins",
     "logs": "Logs",
     "console": "Console",
     "config": "Configuration",
@@ -198,7 +202,15 @@
     "modDisabled": "Mod disabled",
     "modToggleError": "Error toggling mod",
     "confirmDeleteMod": "Delete mod",
-    "modDeleteError": "Error deleting mod"
+    "modDeleteError": "Error deleting mod",
+    "checkUpdates": "Check updates",
+    "updatesAvailable": "update(s)",
+    "updateAll": "Update all",
+    "updatesFound": "{{count}} update(s) found",
+    "noUpdatesFound": "All mods are up to date",
+    "checkUpdatesError": "Error checking updates",
+    "modUpdated": "{{name}} updated successfully",
+    "modUpdateError": "Error updating {{name}}"
   },
   "createInstance": {
     "title": "New Instance",
@@ -322,6 +334,16 @@
     "about": "About",
     "aboutLauncher": "Information about the launcher",
     "launcherDescription": "Kaizen Launcher is a modern, open-source Minecraft launcher built with Tauri, React, and Rust. It supports Fabric, Forge, NeoForge, and Quilt modloaders, as well as Paper, Velocity servers, and more."
+  },
+  "content": {
+    "browseMods": "Browse Mods",
+    "browseModsDesc": "Search and install mods from Modrinth",
+    "browseModrinth": "Browse Modrinth",
+    "browseModrinthDesc": "Search and install mods, resource packs, shaders and datapacks",
+    "manageContent": "Manage Content",
+    "resourcePacksDesc": "Customize your game's textures and visuals",
+    "shadersDesc": "Add beautiful lighting and visual effects",
+    "datapacksDesc": "Modify game mechanics and add new features"
   },
   "browse": {
     "title": "Browse",

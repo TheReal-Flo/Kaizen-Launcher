@@ -79,6 +79,7 @@ pub struct ModMetadata {
     pub name: String,
     pub version: String,
     pub project_id: String,
+    pub version_id: Option<String>,
     pub icon_url: Option<String>,
 }
 

@@ -1,13 +1,14 @@
 import { useState, useCallback, useEffect, useRef, memo } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { toast } from "sonner"
-import { Search, Download, Loader2, ChevronDown, AlertTriangle, Check, SlidersHorizontal, X, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, Download, Loader2, ChevronDown, AlertTriangle, Check, SlidersHorizontal, X, ChevronLeft, ChevronRight, Package, Palette, Sparkles, Database } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
   SelectContent,
@@ -90,6 +91,8 @@ interface ModrinthBrowserProps {
   isServer: boolean
   onModInstalled: () => void
   contentType?: ContentType
+  /** If true, show tabs to switch between content types (for client instances) */
+  showContentTabs?: boolean
 }
 
 function formatDownloads(num: number): string {
@@ -372,11 +375,18 @@ function getContentConfig(contentType: ContentType | undefined, loader: string |
   return { projectType: "mod", itemLabel: "mods", itemLabelSingular: "mod", categories: MOD_CATEGORIES }
 }
 
-export function ModrinthBrowser({ instanceId, mcVersion, loader, isServer: _isServer, onModInstalled, contentType }: ModrinthBrowserProps) {
+export function ModrinthBrowser({ instanceId, mcVersion, loader, isServer: _isServer, onModInstalled, contentType: initialContentType, showContentTabs = false }: ModrinthBrowserProps) {
   const { t } = useTranslation()
+
+  // Internal content type state for tabs
+  const [activeContentType, setActiveContentType] = useState<ContentType>(initialContentType || "mod")
+
+  // Use activeContentType when tabs are shown, otherwise use prop
+  const effectiveContentType = showContentTabs ? activeContentType : initialContentType
+
   // Determine project type based on contentType first, then loader
   // Note: _isServer is kept for potential future use but loader/contentType are now the source of truth
-  const { projectType, itemLabel, itemLabelSingular, categories } = getContentConfig(contentType, loader)
+  const { projectType, itemLabel, itemLabelSingular, categories } = getContentConfig(effectiveContentType, loader)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<ModSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -422,6 +432,17 @@ export function ModrinthBrowser({ instanceId, mcVersion, loader, isServer: _isSe
   useEffect(() => {
     loadInstalledMods()
   }, [loadInstalledMods])
+
+  // Handle content type tab change
+  const handleContentTypeChange = useCallback((value: string) => {
+    const newType = value as ContentType
+    setActiveContentType(newType)
+    // Reset search state when switching tabs
+    setSearchQuery("")
+    setSelectedCategories([])
+    setSortBy("downloads")
+    setCurrentPage(1)
+  }, [])
 
   // Search function that uses current filters
   const performSearch = useCallback(async (query: string, cats: string[], sort: string, page: number = 1) => {
@@ -734,6 +755,30 @@ export function ModrinthBrowser({ instanceId, mcVersion, loader, isServer: _isSe
 
   return (
     <div className="space-y-4">
+      {/* Content type tabs - only shown for client instances when showContentTabs is true */}
+      {showContentTabs && (
+        <Tabs value={activeContentType} onValueChange={handleContentTypeChange}>
+          <TabsList>
+            <TabsTrigger value="mod" className="gap-2">
+              <Package className="h-4 w-4" />
+              {t("browse.mods")}
+            </TabsTrigger>
+            <TabsTrigger value="resourcepack" className="gap-2">
+              <Palette className="h-4 w-4" />
+              {t("browse.resourcePacks")}
+            </TabsTrigger>
+            <TabsTrigger value="shader" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              {t("browse.shaders")}
+            </TabsTrigger>
+            <TabsTrigger value="datapack" className="gap-2">
+              <Database className="h-4 w-4" />
+              {t("browse.datapacks")}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+
       {/* Search bar */}
       <div className="flex gap-2">
         <div className="relative flex-1">
@@ -871,7 +916,7 @@ export function ModrinthBrowser({ instanceId, mcVersion, loader, isServer: _isSe
       )}
 
       {/* Results */}
-      <ScrollArea className="h-[400px]" ref={scrollAreaRef}>
+      <ScrollArea className="h-[450px]" ref={scrollAreaRef}>
         {isSearching ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

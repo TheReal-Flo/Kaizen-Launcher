@@ -36,6 +36,8 @@
     "add": "Ajouter",
     "account": "compte",
     "openFolder": "Ouvrir le dossier",
+    "enable": "Activer",
+    "disable": "Desactiver",
     "clear": "Vider",
     "location": "Emplacement",
     "other": "Autres",
@@ -44,7 +46,8 @@
     "development": "Developpement",
     "license": "Licence",
     "developedBy": "Developpe par",
-    "install": "Installer"
+    "install": "Installer",
+    "update": "Mettre a jour"
   },
   "nav": {
     "home": "Accueil",
@@ -104,6 +107,7 @@
     "deleteConfirm": "Etes-vous sur de vouloir supprimer cette instance ?",
     "settings": "Parametres de l'instance",
     "mods": "Mods",
+    "plugins": "Plugins",
     "logs": "Logs",
     "console": "Console",
     "config": "Configuration",
@@ -198,7 +202,15 @@
     "modDisabled": "Mod desactive",
     "modToggleError": "Erreur lors de la modification du mod",
     "confirmDeleteMod": "Supprimer le mod",
-    "modDeleteError": "Erreur lors de la suppression du mod"
+    "modDeleteError": "Erreur lors de la suppression du mod",
+    "checkUpdates": "Verifier les mises a jour",
+    "updatesAvailable": "mise(s) a jour",
+    "updateAll": "Tout mettre a jour",
+    "updatesFound": "{{count}} mise(s) a jour trouvee(s)",
+    "noUpdatesFound": "Tous les mods sont a jour",
+    "checkUpdatesError": "Erreur lors de la verification des mises a jour",
+    "modUpdated": "{{name}} mis a jour avec succes",
+    "modUpdateError": "Erreur lors de la mise a jour de {{name}}"
   },
   "createInstance": {
     "title": "Nouvelle instance",
@@ -322,6 +334,16 @@
     "about": "A propos",
     "aboutLauncher": "Informations sur le launcher",
     "launcherDescription": "Kaizen Launcher est un launcher Minecraft moderne et open-source construit avec Tauri, React et Rust. Il supporte les modloaders Fabric, Forge, NeoForge et Quilt, ainsi que les serveurs Paper, Velocity et plus encore."
+  },
+  "content": {
+    "browseMods": "Parcourir les mods",
+    "browseModsDesc": "Recherchez et installez des mods depuis Modrinth",
+    "browseModrinth": "Parcourir Modrinth",
+    "browseModrinthDesc": "Recherchez et installez des mods, packs de ressources, shaders et datapacks",
+    "manageContent": "Gerer le contenu",
+    "resourcePacksDesc": "Personnalisez les textures et visuels de votre jeu",
+    "shadersDesc": "Ajoutez de beaux effets de lumiere et visuels",
+    "datapacksDesc": "Modifiez les mecaniques de jeu et ajoutez de nouvelles fonctionnalites"
   },
   "browse": {
     "title": "Parcourir",

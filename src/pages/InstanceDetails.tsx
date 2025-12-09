@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useMemo, memo, useCallback } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { invoke } from "@tauri-apps/api/core"
 import { open } from "@tauri-apps/plugin-dialog"
 import { listen, UnlistenFn } from "@tauri-apps/api/event"
 import { toast } from "sonner"
-import { ArrowLeft, Settings, Package, Save, Loader2, Trash2, FolderOpen, FileText, RefreshCw, ChevronDown, Search, ArrowUpDown, Filter, Download, Play, AlertCircle, Square, Copy, Check, ImageIcon, Link, X } from "lucide-react"
+import { ArrowLeft, Settings, Package, Save, Loader2, FolderOpen, FileText, RefreshCw, ChevronDown, Search, ArrowUpDown, Filter, Download, Play, AlertCircle, Square, Copy, Check, ImageIcon, Link, X, ArrowUp, Trash2, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -65,6 +65,12 @@ interface Instance {
   is_proxy: boolean
 }
 
+interface LogFileInfo {
+  name: string
+  size_bytes: number
+  modified: string | null
+}
+
 interface ModInfo {
   name: string
   version: string
@@ -74,10 +80,15 @@ interface ModInfo {
   project_id: string | null
 }
 
-interface LogFileInfo {
+interface ModUpdateInfo {
+  project_id: string
+  filename: string
+  current_version: string
+  current_version_id: string | null
+  latest_version: string
+  latest_version_id: string
   name: string
-  size_bytes: number
-  modified: string | null
+  icon_url: string | null
 }
 
 // Determine what type of content this server/instance supports
@@ -115,68 +126,13 @@ function getContentLabel(contentType: ContentType): { singular: string; plural: 
   }
 }
 
-// Memoized mod list item component
-interface ModListItemProps {
-  mod: ModInfo
-  onToggle: (filename: string, enabled: boolean) => void
-  onDelete: (filename: string) => void
-}
-
-const ModListItem = memo(function ModListItem({ mod, onToggle, onDelete }: ModListItemProps) {
-  return (
-    <div
-      className={`flex items-center gap-3 p-3 rounded-lg border ${
-        mod.enabled ? "bg-card" : "bg-muted/50 opacity-60"
-      }`}
-    >
-      {/* Mod icon */}
-      <div className="flex-shrink-0">
-        {mod.icon_url ? (
-          <img
-            src={mod.icon_url}
-            alt={mod.name}
-            loading="lazy"
-            className="w-10 h-10 rounded-md object-cover"
-          />
-        ) : (
-          <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center">
-            <Package className="h-5 w-5 text-muted-foreground" />
-          </div>
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium truncate">{mod.name}</p>
-        <p className="text-sm text-muted-foreground truncate">
-          {mod.version} - {mod.filename}
-        </p>
-      </div>
-      <div className="flex items-center gap-3 ml-4">
-        <Switch
-          checked={mod.enabled}
-          onCheckedChange={() => onToggle(mod.filename, mod.enabled)}
-        />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-destructive hover:text-destructive"
-          onClick={() => onDelete(mod.filename)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  )
-})
-
 export function InstanceDetails() {
   const { t } = useTranslation()
   const { instanceId } = useParams<{ instanceId: string }>()
   const navigate = useNavigate()
   const [instance, setInstance] = useState<Instance | null>(null)
-  const [mods, setMods] = useState<ModInfo[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [isLoadingMods, setIsLoadingMods] = useState(false)
 
   // Launch state
   const [isInstalled, setIsInstalled] = useState(false)
@@ -207,6 +163,15 @@ export function InstanceDetails() {
   // Content type (mods vs plugins vs none)
   const contentType = useMemo(() => getContentType(instance?.loader || null, instance?.is_server || false), [instance?.loader, instance?.is_server])
   const contentLabel = useMemo(() => getContentLabel(contentType), [contentType])
+
+  // Mods state
+  const [mods, setMods] = useState<ModInfo[]>([])
+  const [isLoadingMods, setIsLoadingMods] = useState(false)
+  const [modUpdates, setModUpdates] = useState<ModUpdateInfo[]>([])
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
+  const [updatingMods, setUpdatingMods] = useState<Set<string>>(new Set())
+  const [modsPage, setModsPage] = useState(1)
+  const MODS_PER_PAGE = 10
 
   // Settings form state
   const [name, setName] = useState("")
@@ -248,18 +213,132 @@ export function InstanceDetails() {
     }
   }
 
+  // Load mods for this instance
   const loadMods = async () => {
     if (!instanceId) return
     setIsLoadingMods(true)
     try {
-      const result = await invoke<ModInfo[]>("get_instance_mods", { instanceId })
-      setMods(result)
+      const modsData = await invoke<ModInfo[]>("get_instance_mods", { instanceId })
+      setMods(modsData)
     } catch (err) {
       console.error("Failed to load mods:", err)
-      setMods([])
     } finally {
       setIsLoadingMods(false)
     }
+  }
+
+  const handleToggleMod = async (filename: string, enabled: boolean) => {
+    if (!instanceId) return
+    try {
+      await invoke("toggle_mod", { instanceId, filename, enabled })
+      toast.success(enabled ? t("instanceDetails.modEnabled") : t("instanceDetails.modDisabled"))
+      loadMods()
+    } catch (err) {
+      toast.error(t("instanceDetails.modToggleError"))
+      console.error("Failed to toggle mod:", err)
+    }
+  }
+
+  const handleDeleteMod = async (filename: string) => {
+    if (!instanceId) return
+    try {
+      await invoke("delete_mod", { instanceId, filename })
+      toast.success(t("notifications.modDeleted"))
+      loadMods()
+    } catch (err) {
+      toast.error(t("instanceDetails.modDeleteError"))
+      console.error("Failed to delete mod:", err)
+    }
+  }
+
+  const handleOpenModsFolder = async () => {
+    if (!instanceId) return
+    try {
+      const isPlugin = instance?.is_server || instance?.is_proxy
+      await invoke("open_instance_folder", {
+        instanceId,
+        subfolder: isPlugin ? "plugins" : "mods",
+      })
+    } catch (err) {
+      console.error("Failed to open folder:", err)
+    }
+  }
+
+  // Check for mod updates
+  const checkModUpdates = async () => {
+    if (!instanceId) return
+    setIsCheckingUpdates(true)
+    try {
+      const updates = await invoke<ModUpdateInfo[]>("check_mod_updates", {
+        instanceId,
+        projectType: contentType === "plugins" ? "plugin" : "mod",
+      })
+      setModUpdates(updates)
+      if (updates.length > 0) {
+        toast.success(t("instanceDetails.updatesFound", { count: String(updates.length) }))
+      } else {
+        toast.success(t("instanceDetails.noUpdatesFound"))
+      }
+    } catch (err) {
+      console.error("Failed to check updates:", err)
+      toast.error(t("instanceDetails.checkUpdatesError"))
+    } finally {
+      setIsCheckingUpdates(false)
+    }
+  }
+
+  // Update a single mod
+  const handleUpdateMod = async (update: ModUpdateInfo) => {
+    if (!instanceId) return
+    setUpdatingMods(prev => new Set(prev).add(update.project_id))
+    try {
+      await invoke("update_mod", {
+        instanceId,
+        projectId: update.project_id,
+        currentFilename: update.filename,
+        newVersionId: update.latest_version_id,
+        projectType: contentType === "plugins" ? "plugin" : "mod",
+      })
+      toast.success(t("instanceDetails.modUpdated", { name: update.name }))
+      // Remove from updates list
+      setModUpdates(prev => prev.filter(u => u.project_id !== update.project_id))
+      // Reload mods list
+      loadMods()
+    } catch (err) {
+      console.error("Failed to update mod:", err)
+      toast.error(t("instanceDetails.modUpdateError", { name: update.name }))
+    } finally {
+      setUpdatingMods(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(update.project_id)
+        return newSet
+      })
+    }
+  }
+
+  // Update all mods
+  const handleUpdateAllMods = async () => {
+    for (const update of modUpdates) {
+      await handleUpdateMod(update)
+    }
+  }
+
+  // Check if a mod has an update available
+  const getModUpdate = (mod: ModInfo): ModUpdateInfo | undefined => {
+    if (!mod.project_id) return undefined
+    return modUpdates.find(u => u.project_id === mod.project_id)
+  }
+
+  // Pagination for mods
+  const totalModsPages = Math.ceil(mods.length / MODS_PER_PAGE)
+  const paginatedMods = useMemo(() => {
+    const start = (modsPage - 1) * MODS_PER_PAGE
+    return mods.slice(start, start + MODS_PER_PAGE)
+  }, [mods, modsPage])
+
+  // Callback when content is changed
+  const handleContentChanged = () => {
+    loadMods()
   }
 
   const checkInstallation = async () => {
@@ -515,11 +594,11 @@ export function InstanceDetails() {
     // Batch all initial API calls in parallel for better performance
     Promise.all([
       loadInstance(),
-      loadMods(),
       checkInstallation(),
       checkRunningStatus(),
       loadActiveAccount(),
       loadIcon(),
+      loadMods(),
     ]).catch(console.error)
 
     // Listen for instance status events
@@ -674,49 +753,6 @@ export function InstanceDetails() {
     }
   }
 
-  const handleToggleMod = useCallback(async (filename: string, enabled: boolean) => {
-    if (!instanceId) return
-
-    // Optimistic update - update local state immediately
-    setMods(prev => prev.map(mod =>
-      mod.filename === filename ? { ...mod, enabled: !enabled } : mod
-    ))
-
-    try {
-      await invoke("toggle_mod", { instanceId, filename, enabled: !enabled })
-      toast.success(enabled ? t("instanceDetails.modDisabled") : t("instanceDetails.modEnabled"))
-    } catch (err) {
-      // Revert on error
-      setMods(prev => prev.map(mod =>
-        mod.filename === filename ? { ...mod, enabled } : mod
-      ))
-      console.error("Failed to toggle mod:", err)
-      toast.error(t("instanceDetails.modToggleError"))
-    }
-  }, [instanceId, contentLabel.singular])
-
-  const handleDeleteMod = useCallback(async (filename: string) => {
-    if (!instanceId) return
-    if (!confirm(`${t("instanceDetails.confirmDeleteMod")} ${filename} ?`)) return
-    try {
-      await invoke("delete_mod", { instanceId, filename })
-      await loadMods()
-      toast.success(t("notifications.modDeleted"))
-    } catch (err) {
-      console.error("Failed to delete mod:", err)
-      toast.error(t("instanceDetails.modDeleteError"))
-    }
-  }, [instanceId, t, loadMods])
-
-  const handleOpenModsFolder = async () => {
-    if (!instanceId) return
-    try {
-      await invoke("open_mods_folder", { instanceId })
-    } catch (err) {
-      console.error("Failed to open mods folder:", err)
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -862,6 +898,12 @@ export function InstanceDetails() {
             <TabsTrigger value="mods" className="gap-2">
               <Package className="h-4 w-4" />
               {contentLabel.plural}
+            </TabsTrigger>
+          )}
+          {contentType !== "none" && (
+            <TabsTrigger value="content" className="gap-2">
+              <Search className="h-4 w-4" />
+              {t("content.manageContent")}
             </TabsTrigger>
           )}
           <TabsTrigger value="logs" className="gap-2" onClick={() => loadLogs()}>
@@ -1143,189 +1185,188 @@ export function InstanceDetails() {
           )}
         </TabsContent>
 
-        {/* Mods/Plugins Tab */}
+        {/* Installed Mods/Plugins Tab */}
         {contentType !== "none" && (
-        <TabsContent value="mods" className="mt-4">
-          <Tabs defaultValue="installed" className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="installed" className="gap-2">
-                <Package className="h-4 w-4" />
-                {t("instanceDetails.installedMods")}
-                {mods.length > 0 && (
-                  <Badge variant="secondary" className="ml-1">{mods.length}</Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="browse" className="gap-2">
-                <Download className="h-4 w-4" />
-                {t("instanceDetails.browseModrinth")}
-              </TabsTrigger>
-              {/* Only show resource packs, shaders, datapacks for client instances */}
-              {!instance.is_server && !instance.is_proxy && (
-                <>
-                  <TabsTrigger value="resourcepacks" className="gap-2">
-                    {t("browse.resourcePacks")}
-                  </TabsTrigger>
-                  <TabsTrigger value="shaders" className="gap-2">
-                    {t("browse.shaders")}
-                  </TabsTrigger>
-                  <TabsTrigger value="datapacks" className="gap-2">
-                    {t("browse.datapacks")}
-                  </TabsTrigger>
-                </>
-              )}
-            </TabsList>
-
-            {/* Installed Mods/Plugins Sub-Tab */}
-            <TabsContent value="installed">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>{t("instanceDetails.installedMods")}</CardTitle>
-                      <CardDescription>
-                        {t("instanceDetails.manageMods")}
-                      </CardDescription>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={handleOpenModsFolder} className="gap-2">
-                      <FolderOpen className="h-4 w-4" />
-                      {t("common.openFolder")}
+        <TabsContent value="mods" className="mt-4 flex flex-col flex-1 min-h-0">
+          <Card className="flex flex-col flex-1 min-h-0">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    {t("instanceDetails.installedMods")}
+                    {mods.length > 0 && (
+                      <Badge variant="secondary">{mods.length}</Badge>
+                    )}
+                  </CardTitle>
+                  {modUpdates.length > 0 && (
+                    <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+                      {modUpdates.length} {t("instanceDetails.updatesAvailable")}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {modUpdates.length > 0 && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleUpdateAllMods}
+                      disabled={updatingMods.size > 0}
+                      className="gap-2 bg-green-500 hover:bg-green-600"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                      {t("instanceDetails.updateAll")}
                     </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {isLoadingMods ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : mods.length === 0 ? (
-                    <div className="text-center py-8">
-                      <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground mb-2">{t("instanceDetails.noModInstalled")}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {t("instanceDetails.useModrinth")}
-                      </p>
-                    </div>
-                  ) : (
-                    <ScrollArea className="h-[400px]">
-                      <div className="space-y-2">
-                        {mods.map((mod) => (
-                          <ModListItem
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={checkModUpdates}
+                    disabled={isCheckingUpdates || mods.length === 0}
+                    className="gap-2"
+                  >
+                    {isCheckingUpdates ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    {t("instanceDetails.checkUpdates")}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleOpenModsFolder} className="gap-2">
+                    <FolderOpen className="h-4 w-4" />
+                    {t("common.openFolder")}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 flex flex-col min-h-0 pt-0">
+              {isLoadingMods ? (
+                <div className="flex items-center justify-center py-8 flex-1">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : mods.length === 0 ? (
+                <div className="text-center py-8 flex-1 flex flex-col items-center justify-center">
+                  <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground mb-2">{t("instanceDetails.noModInstalled")}</p>
+                  <p className="text-sm text-muted-foreground">{t("instanceDetails.useModrinth")}</p>
+                </div>
+              ) : (
+                <div className="flex flex-col flex-1 min-h-0">
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    <div className="space-y-2 pr-2">
+                      {paginatedMods.map((mod) => {
+                        const update = getModUpdate(mod)
+                        const isUpdating = mod.project_id ? updatingMods.has(mod.project_id) : false
+
+                        return (
+                          <div
                             key={mod.filename}
-                            mod={mod}
-                            onToggle={handleToggleMod}
-                            onDelete={handleDeleteMod}
-                          />
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Browse Modrinth Sub-Tab */}
-            <TabsContent value="browse">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("instanceDetails.browseModrinth")}</CardTitle>
-                  <CardDescription>
-                    {t("instanceDetails.searchAndInstall")}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {instance.loader ? (
-                    <ModrinthBrowser
-                      instanceId={instanceId!}
-                      mcVersion={instance.mc_version}
-                      loader={instance.loader}
-                      isServer={instance.is_server}
-                      onModInstalled={loadMods}
-                    />
-                  ) : (
-                    <div className="text-center py-8">
-                      <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground mb-2">{t("instanceDetails.loaderRequired")}</p>
+                            className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                              !mod.enabled ? "opacity-50 bg-muted/30" : ""
+                            } ${update ? "border-green-500/50 bg-green-500/5" : ""}`}
+                          >
+                            {mod.icon_url ? (
+                              <img
+                                src={mod.icon_url}
+                                alt={mod.name}
+                                className="w-10 h-10 rounded-md object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+                                <Package className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{mod.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs text-muted-foreground truncate">{mod.version}</p>
+                                {update && (
+                                  <Badge variant="outline" className="text-xs text-green-500 border-green-500/50">
+                                    → {update.latest_version}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              {update && (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleUpdateMod(update)}
+                                  disabled={isUpdating}
+                                  className="gap-1 bg-green-500 hover:bg-green-600"
+                                >
+                                  {isUpdating ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <ArrowUp className="h-3 w-3" />
+                                  )}
+                                  {t("common.update")}
+                                </Button>
+                              )}
+                              <Switch
+                                checked={mod.enabled}
+                                onCheckedChange={(checked) => handleToggleMod(mod.filename, checked)}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteMod(mod.filename)}
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  {/* Pagination */}
+                  {totalModsPages > 1 && (
+                    <div className="flex items-center justify-between pt-4 border-t mt-4">
                       <p className="text-sm text-muted-foreground">
-                        {t("instanceDetails.vanillaNoMods")}
+                        {t("modpack.page", { current: String(modsPage), total: String(totalModsPages) })}
                       </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setModsPage(p => Math.max(1, p - 1))}
+                          disabled={modsPage === 1}
+                          className="h-8 w-8"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => setModsPage(p => Math.min(totalModsPages, p + 1))}
+                          disabled={modsPage === totalModsPages}
+                          className="h-8 w-8"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            </TabsContent>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        )}
 
-            {/* Resource Packs Sub-Tab */}
-            {!instance.is_server && !instance.is_proxy && (
-              <TabsContent value="resourcepacks">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{t("browse.resourcePacks")}</CardTitle>
-                    <CardDescription>
-                      {t("browse.searchResourcePacks")}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ModrinthBrowser
-                      instanceId={instanceId!}
-                      mcVersion={instance.mc_version}
-                      loader={instance.loader}
-                      isServer={instance.is_server}
-                      onModInstalled={loadMods}
-                      contentType="resourcepack"
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            )}
-
-            {/* Shaders Sub-Tab */}
-            {!instance.is_server && !instance.is_proxy && (
-              <TabsContent value="shaders">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{t("browse.shaders")}</CardTitle>
-                    <CardDescription>
-                      {t("browse.searchShaders")}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ModrinthBrowser
-                      instanceId={instanceId!}
-                      mcVersion={instance.mc_version}
-                      loader={instance.loader}
-                      isServer={instance.is_server}
-                      onModInstalled={loadMods}
-                      contentType="shader"
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            )}
-
-            {/* Datapacks Sub-Tab */}
-            {!instance.is_server && !instance.is_proxy && (
-              <TabsContent value="datapacks">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{t("browse.datapacks")}</CardTitle>
-                    <CardDescription>
-                      {t("browse.searchDatapacks")}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ModrinthBrowser
-                      instanceId={instanceId!}
-                      mcVersion={instance.mc_version}
-                      loader={instance.loader}
-                      isServer={instance.is_server}
-                      onModInstalled={loadMods}
-                      contentType="datapack"
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            )}
-          </Tabs>
+        {/* Browse Content Tab (Modrinth with tabs for different content types) */}
+        {contentType !== "none" && (
+        <TabsContent value="content" className="mt-4">
+          <ModrinthBrowser
+            instanceId={instanceId!}
+            mcVersion={instance.mc_version}
+            loader={instance.loader}
+            isServer={instance.is_server}
+            onModInstalled={handleContentChanged}
+            showContentTabs={!instance.is_server && !instance.is_proxy}
+          />
         </TabsContent>
         )}
 

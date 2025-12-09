@@ -258,6 +258,7 @@ struct ModMetadata {
     name: String,
     version: String,
     project_id: String,
+    version_id: Option<String>,
     icon_url: Option<String>,
 }
 
@@ -370,8 +371,9 @@ pub async fn install_modrinth_mod(
     let meta_path = target_dir.join(&meta_filename);
     let metadata = ModMetadata {
         name: project.title,
-        version: version.version_number,
+        version: version.version_number.clone(),
         project_id: project_id.clone(),
+        version_id: Some(version_id.clone()),
         icon_url: project.icon_url,
     };
 
@@ -640,6 +642,7 @@ pub async fn install_modrinth_mods_batch(
             name: project.title.clone(),
             version: version.version_number.clone(),
             project_id: project_id.clone(),
+            version_id: Some(version_id.clone()),
             icon_url: project.icon_url.clone(),
         };
 
@@ -1092,7 +1095,7 @@ pub async fn install_modrinth_modpack(
         let total_mods = mod_files_to_fetch.len();
         let mut fetched = 0;
 
-        for (project_id, _version_id, filename) in mod_files_to_fetch {
+        for (project_id, version_id, filename) in mod_files_to_fetch {
             // Fetch project info for icon and name
             match client.get_project(&project_id).await {
                 Ok(project_info) => {
@@ -1103,6 +1106,7 @@ pub async fn install_modrinth_modpack(
                         name: project_info.title,
                         version: "".to_string(), // Version already in filename
                         project_id: project_id.clone(),
+                        version_id: Some(version_id.clone()),
                         icon_url: project_info.icon_url,
                     };
 
@@ -1219,4 +1223,254 @@ pub async fn install_modrinth_modpack(
         loader_version,
         files_count: total_files,
     })
+}
+
+// ============= Mod Update Feature =============
+
+/// Information about a mod that has an update available
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModUpdateInfo {
+    pub project_id: String,
+    pub filename: String,
+    pub current_version: String,
+    pub current_version_id: Option<String>,
+    pub latest_version: String,
+    pub latest_version_id: String,
+    pub name: String,
+    pub icon_url: Option<String>,
+}
+
+/// Check for updates for all mods in an instance
+#[tauri::command]
+pub async fn check_mod_updates(
+    state: State<'_, SharedState>,
+    instance_id: String,
+    project_type: Option<String>,
+) -> AppResult<Vec<ModUpdateInfo>> {
+    let state_guard = state.read().await;
+    let client = ModrinthClient::new(&state_guard.http_client);
+
+    let instance = Instance::get_by_id(&state_guard.db, &instance_id)
+        .await
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::Instance("Instance not found".to_string()))?;
+
+    let ptype = project_type.as_deref();
+    let folder_name = get_content_folder(ptype, instance.loader.as_deref(), instance.is_server);
+
+    let instance_dir = state_guard
+        .data_dir
+        .join("instances")
+        .join(&instance.game_dir);
+
+    // Handle datapacks specially
+    let content_dir = if ptype == Some("datapack") {
+        let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
+        instance_dir.join("saves").join(&world_name).join("datapacks")
+    } else {
+        instance_dir.join(folder_name)
+    };
+
+    if !content_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut updates = Vec::new();
+    let mut entries = tokio::fs::read_dir(&content_dir)
+        .await
+        .map_err(|e| AppError::Io(format!("Failed to read {} directory: {}", folder_name, e)))?;
+
+    // Collect all mods with their metadata
+    let mut mods_to_check: Vec<(String, ModMetadata)> = Vec::new();
+
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| AppError::Io(format!("Failed to read directory entry: {}", e)))?
+    {
+        let filename = entry.file_name().to_string_lossy().to_string();
+
+        // Look for .meta.json files
+        if filename.ends_with(".meta.json") {
+            let meta_path = entry.path();
+            if let Ok(content) = tokio::fs::read_to_string(&meta_path).await {
+                if let Ok(meta) = serde_json::from_str::<ModMetadata>(&content) {
+                    // Find the corresponding mod file
+                    let base_name = filename.trim_end_matches(".meta.json");
+                    let jar_filename = format!("{}.jar", base_name);
+                    let zip_filename = format!("{}.zip", base_name);
+
+                    let mod_filename = if content_dir.join(&jar_filename).exists() {
+                        jar_filename
+                    } else if content_dir.join(&zip_filename).exists() {
+                        zip_filename
+                    } else if content_dir.join(format!("{}.jar.disabled", base_name)).exists() {
+                        format!("{}.jar.disabled", base_name)
+                    } else if content_dir.join(format!("{}.zip.disabled", base_name)).exists() {
+                        format!("{}.zip.disabled", base_name)
+                    } else {
+                        continue;
+                    };
+
+                    mods_to_check.push((mod_filename, meta));
+                }
+            }
+        }
+    }
+
+    // Check each mod for updates
+    for (filename, meta) in mods_to_check {
+        // Get the latest versions for this project
+        let game_versions = Some(vec![instance.mc_version.as_str()]);
+
+        // Only include loaders for mods and plugins
+        let loaders = match ptype {
+            Some("mod") | Some("plugin") | None => {
+                instance.loader.as_ref().map(|l| vec![l.to_lowercase()])
+            }
+            _ => None,
+        };
+        let loaders_refs: Option<Vec<&str>> = loaders.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        match client
+            .get_project_versions(&meta.project_id, loaders_refs.as_deref(), game_versions.as_deref())
+            .await
+        {
+            Ok(versions) => {
+                if let Some(latest) = versions.first() {
+                    // Check if there's a newer version
+                    let needs_update = match &meta.version_id {
+                        Some(current_vid) => *current_vid != latest.id,
+                        None => true, // If we don't have version_id, assume it might need update
+                    };
+
+                    if needs_update {
+                        updates.push(ModUpdateInfo {
+                            project_id: meta.project_id.clone(),
+                            filename: filename.clone(),
+                            current_version: meta.version.clone(),
+                            current_version_id: meta.version_id.clone(),
+                            latest_version: latest.version_number.clone(),
+                            latest_version_id: latest.id.clone(),
+                            name: meta.name.clone(),
+                            icon_url: meta.icon_url.clone(),
+                        });
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to check updates for {}: {}", meta.project_id, e);
+            }
+        }
+    }
+
+    Ok(updates)
+}
+
+/// Update a mod to a specific version
+#[tauri::command]
+pub async fn update_mod(
+    state: State<'_, SharedState>,
+    instance_id: String,
+    project_id: String,
+    current_filename: String,
+    new_version_id: String,
+    project_type: Option<String>,
+) -> AppResult<String> {
+    let state_guard = state.read().await;
+    let client = ModrinthClient::new(&state_guard.http_client);
+
+    let instance = Instance::get_by_id(&state_guard.db, &instance_id)
+        .await
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::Instance("Instance not found".to_string()))?;
+
+    let ptype = project_type.as_deref();
+    let folder_name = get_content_folder(ptype, instance.loader.as_deref(), instance.is_server);
+
+    let instance_dir = state_guard
+        .data_dir
+        .join("instances")
+        .join(&instance.game_dir);
+
+    // Handle datapacks specially
+    let content_dir = if ptype == Some("datapack") {
+        let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
+        instance_dir.join("saves").join(&world_name).join("datapacks")
+    } else {
+        instance_dir.join(folder_name)
+    };
+
+    // Get project info
+    let project = client
+        .get_project(&project_id)
+        .await
+        .map_err(|e| AppError::Network(e.to_string()))?;
+
+    // Get the new version info
+    let version = client
+        .get_version(&new_version_id)
+        .await
+        .map_err(|e| AppError::Network(e.to_string()))?;
+
+    // Find the primary file
+    let file = version
+        .files
+        .iter()
+        .find(|f| f.primary)
+        .or_else(|| version.files.first())
+        .ok_or_else(|| AppError::Instance("No files found for this version".to_string()))?;
+
+    let new_path = content_dir.join(&file.filename);
+
+    // Download the new file
+    client
+        .download_file(file, &new_path)
+        .await
+        .map_err(|e| AppError::Network(e.to_string()))?;
+
+    // Delete the old file
+    let old_path = content_dir.join(&current_filename);
+    if old_path.exists() {
+        tokio::fs::remove_file(&old_path)
+            .await
+            .map_err(|e| AppError::Io(format!("Failed to delete old mod: {}", e)))?;
+    }
+
+    // Delete old metadata file
+    let old_base = current_filename
+        .trim_end_matches(".disabled")
+        .trim_end_matches(".jar")
+        .trim_end_matches(".zip");
+    let old_meta_path = content_dir.join(format!("{}.meta.json", old_base));
+    if old_meta_path.exists() {
+        let _ = tokio::fs::remove_file(&old_meta_path).await;
+    }
+
+    // Save new metadata
+    let new_base = file.filename
+        .trim_end_matches(".jar")
+        .trim_end_matches(".zip");
+    let new_meta_path = content_dir.join(format!("{}.meta.json", new_base));
+    let metadata = ModMetadata {
+        name: project.title.clone(),
+        version: version.version_number.clone(),
+        project_id: project_id.clone(),
+        version_id: Some(new_version_id.clone()),
+        icon_url: project.icon_url,
+    };
+
+    if let Ok(meta_json) = serde_json::to_string_pretty(&metadata) {
+        let _ = tokio::fs::write(&new_meta_path, meta_json).await;
+    }
+
+    log::info!(
+        "Updated mod {} from {} to {} ({})",
+        project.title,
+        current_filename,
+        file.filename,
+        version.version_number
+    );
+
+    Ok(file.filename.clone())
 }

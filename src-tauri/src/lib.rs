@@ -175,6 +175,8 @@ pub fn run() {
             modrinth::commands::install_modrinth_mods_batch,
             modrinth::commands::get_installed_mod_ids,
             modrinth::commands::install_modrinth_modpack,
+            modrinth::commands::check_mod_updates,
+            modrinth::commands::update_mod,
             // Tunnel commands
             tunnel::commands::check_tunnel_agent,
             tunnel::commands::install_tunnel_agent,
