@@ -1,0 +1,79 @@
+import { lazy, Suspense } from "react"
+import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { Toaster } from "sonner"
+import { Loader2 } from "lucide-react"
+import { MainLayout } from "@/components/layout/MainLayout"
+import { Home } from "@/pages/Home"
+import { OnboardingSidebar } from "@/components/onboarding/OnboardingSidebar"
+import { UpdateNotification } from "@/components/UpdateNotification"
+import { useOnboardingStore } from "@/stores/onboardingStore"
+import { useTheme } from "@/hooks/useTheme"
+import { useUpdateChecker } from "@/hooks/useUpdateChecker"
+
+// Lazy load pages for better initial bundle size
+const Instances = lazy(() => import("@/pages/Instances").then(m => ({ default: m.Instances })))
+const InstanceDetails = lazy(() => import("@/pages/InstanceDetails").then(m => ({ default: m.InstanceDetails })))
+const Browse = lazy(() => import("@/pages/Browse").then(m => ({ default: m.Browse })))
+const Accounts = lazy(() => import("@/pages/Accounts").then(m => ({ default: m.Accounts })))
+const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })))
+
+// Loading fallback for lazy components
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+  )
+}
+
+function App() {
+  const { completed, setCompleted } = useOnboardingStore()
+  const { resolvedTheme } = useTheme()
+  const {
+    updateAvailable,
+    updateInfo,
+    installing,
+    downloadProgress,
+    error,
+    downloadAndInstall,
+    dismissUpdate,
+  } = useUpdateChecker(true)
+
+  return (
+    <>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<MainLayout />}>
+            <Route index element={<Home />} />
+            <Route path="instances" element={<Suspense fallback={<PageLoader />}><Instances /></Suspense>} />
+            <Route path="instances/:instanceId" element={<Suspense fallback={<PageLoader />}><InstanceDetails /></Suspense>} />
+            <Route path="browse" element={<Suspense fallback={<PageLoader />}><Browse /></Suspense>} />
+            <Route path="accounts" element={<Suspense fallback={<PageLoader />}><Accounts /></Suspense>} />
+            <Route path="settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+      <Toaster
+        position="bottom-right"
+        richColors
+        closeButton
+        theme={resolvedTheme}
+      />
+      <OnboardingSidebar
+        open={!completed}
+        onComplete={() => setCompleted(true)}
+      />
+      <UpdateNotification
+        open={updateAvailable}
+        updateInfo={updateInfo}
+        downloading={installing}
+        downloadProgress={downloadProgress}
+        error={error}
+        onDownload={downloadAndInstall}
+        onDismiss={dismissUpdate}
+      />
+    </>
+  )
+}
+
+export default App

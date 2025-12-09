@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Kaizen Launcher",
+  "version": "0.1.0",
+  "identifier": "com.kaizen.launcher",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Kaizen Launcher",
+        "width": 1280,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": false,
+        "transparent": false,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' https://cdn.modrinth.com https://launcher.mojang.com https://crafatar.com https://mc-heads.net data: blob:; connect-src 'self' https://api.modrinth.com https://cdn.modrinth.com https://api.minecraftservices.com https://api.mojang.com https://authserver.mojang.com https://meta.fabricmc.net https://maven.fabricmc.net https://maven.quiltmc.org https://maven.neoforged.net https://files.minecraftforge.net https://api.papermc.io https://api.purpurmc.org https://login.microsoftonline.com https://login.live.com https://user.auth.xboxlive.com https://xsts.auth.xboxlive.com; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMwQTU2RDE2ODU1ODRCMDkKUldRSlMxaUZGbTJsTUdiOEd0ZTJpb2VNRStBaXpIZDZrYm9NdGg2SStJQnJqVFdtRHlmUDVUbjkK",
+      "endpoints": [
+        "https://github.com/KaizenCore/Kaizen-Launcher/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

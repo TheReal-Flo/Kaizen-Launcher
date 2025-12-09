@@ -1,0 +1,17 @@
+# Clippy configuration for Kaizen Launcher
+# See: https://rust-lang.github.io/rust-clippy/master/index.html
+
+# Maximum allowed cognitive complexity
+cognitive-complexity-threshold = 25
+
+# Maximum number of lines for a function
+too-many-lines-threshold = 200
+
+# Maximum number of arguments for a function
+too-many-arguments-threshold = 8
+
+# Allowed names for variables
+allowed-idents-below-min-chars = ["e", "i", "n", "s", "x", "y", "id", "db", "ok"]
+
+# Standard library types that should be disallowed (none)
+disallowed-types = []
