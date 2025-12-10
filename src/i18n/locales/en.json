@@ -86,6 +86,12 @@
     "totalAccumulated": "Total accumulated",
     "unableToLoadData": "Unable to load data"
   },
+  "launch": {
+    "preparing": "Preparing...",
+    "checking_java": "Checking Java...",
+    "building_args": "Configuring...",
+    "starting": "Starting..."
+  },
   "instances": {
     "title": "Instances",
     "subtitle": "Manage your Minecraft installations",

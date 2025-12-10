@@ -63,6 +63,7 @@ export function Home() {
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null)
   const [instanceStatus, setInstanceStatus] = useState<InstanceStatus>("not_installed")
   const [isLaunching, setIsLaunching] = useState(false)
+  const [launchStep, setLaunchStep] = useState<string | null>(null)
   const [totalMods, setTotalMods] = useState<number>(0)
   const [installProgress, setInstallProgress] = useState<{ current: number; message: string } | null>(null)
   const [instanceIcons, setInstanceIcons] = useState<Record<string, string | null>>({})
@@ -187,9 +188,9 @@ export function Home() {
     }
   }, [selectedInstance])
 
-  // Listen for install progress
+  // Listen for install progress and launch progress
   useEffect(() => {
-    const unlisten = listen<{ stage: string; current: number; total: number; message: string }>("install-progress", (event) => {
+    const unlistenInstall = listen<{ stage: string; current: number; total: number; message: string }>("install-progress", (event) => {
       if (event.payload.stage === "complete") {
         setInstallProgress(null)
         setInstanceStatus("ready")
@@ -202,10 +203,31 @@ export function Home() {
       }
     })
 
+    const unlistenLaunchProgress = listen<{ instance_id: string; step: string }>("launch-progress", (event) => {
+      if (selectedInstance && event.payload.instance_id === selectedInstance.id) {
+        setLaunchStep(event.payload.step)
+      }
+    })
+
+    const unlistenStatus = listen<{ instance_id: string; status: string }>("instance-status", (event) => {
+      if (selectedInstance && event.payload.instance_id === selectedInstance.id) {
+        if (event.payload.status === "running") {
+          setInstanceStatus("running")
+          setIsLaunching(false)
+          setLaunchStep(null)
+        } else {
+          setInstanceStatus("ready")
+          setLaunchStep(null)
+        }
+      }
+    })
+
     return () => {
-      unlisten.then(fn => fn()).catch(() => {})
+      unlistenInstall.then(fn => fn()).catch(() => {})
+      unlistenLaunchProgress.then(fn => fn()).catch(() => {})
+      unlistenStatus.then(fn => fn()).catch(() => {})
     }
-  }, [])
+  }, [selectedInstance])
 
   const getIconUrl = (instance: Instance): string | null => {
     return instanceIcons[instance.id] || null
@@ -280,12 +302,23 @@ export function Home() {
     return date.toLocaleDateString()
   }
 
+  const getLaunchStepText = () => {
+    if (!launchStep) return t("home.launching")
+    switch (launchStep) {
+      case "preparing": return t("launch.preparing")
+      case "checking_java": return t("launch.checking_java")
+      case "building_args": return t("launch.building_args")
+      case "starting": return t("launch.starting")
+      default: return t("home.launching")
+    }
+  }
+
   const getButtonContent = () => {
     if (isLaunching) {
       return (
         <>
           <Loader2 className="h-5 w-5 animate-spin" />
-          {t("home.launching")}
+          {getLaunchStepText()}
         </>
       )
     }

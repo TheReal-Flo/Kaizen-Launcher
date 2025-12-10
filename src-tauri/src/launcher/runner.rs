@@ -36,6 +36,14 @@ pub struct ServerLogEvent {
     pub is_error: bool,
 }
 
+#[derive(Clone, Serialize)]
+pub struct LaunchProgressEvent {
+    pub instance_id: String,
+    pub step: String,     // "preparing", "checking_java", "building_args", "starting"
+    pub step_index: u8,   // 1-4
+    pub total_steps: u8,  // 4
+}
+
 /// Launch Minecraft for the given instance
 #[allow(clippy::too_many_arguments)]
 pub async fn launch_minecraft(

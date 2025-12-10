@@ -152,6 +152,7 @@ export function InstanceDetails() {
   // Launch state
   const [isInstalled, setIsInstalled] = useState(false)
   const [isLaunching, setIsLaunching] = useState(false)
+  const [launchStep, setLaunchStep] = useState<string | null>(null)
 
   // Use global installation store
   const { startInstallation, isInstalling: checkIsInstalling } = useInstallationStore()
@@ -631,8 +632,19 @@ export function InstanceDetails() {
     let unlistenStatus: UnlistenFn | null = null
     let unlistenTunnelUrl: UnlistenFn | null = null
     let unlistenTunnelStatus: UnlistenFn | null = null
+    let unlistenLaunchProgress: UnlistenFn | null = null
 
     const setupListeners = async () => {
+      // Listen for launch progress events
+      unlistenLaunchProgress = await listen<{ instance_id: string; step: string; step_index: number; total_steps: number }>(
+        "launch-progress",
+        (event) => {
+          if (event.payload.instance_id === instanceId) {
+            setLaunchStep(event.payload.step)
+          }
+        }
+      )
+
       unlistenStatus = await listen<{ instance_id: string; status: string; exit_code: number | null }>(
         "instance-status",
         (event) => {
@@ -640,6 +652,7 @@ export function InstanceDetails() {
             const running = event.payload.status === "running"
             setIsRunning(running)
             setIsLaunching(false)
+            setLaunchStep(null) // Clear launch step when status changes
             if (!running) {
               setLaunchError(null)
               setTunnelUrl(null) // Clear tunnel URL when server stops
@@ -673,6 +686,7 @@ export function InstanceDetails() {
     setupListeners()
 
     return () => {
+      if (unlistenLaunchProgress) unlistenLaunchProgress()
       if (unlistenStatus) unlistenStatus()
       if (unlistenTunnelUrl) unlistenTunnelUrl()
       if (unlistenTunnelStatus) unlistenTunnelStatus()
@@ -889,7 +903,11 @@ export function InstanceDetails() {
               ) : isLaunching ? (
                 <>
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  {t("instanceDetails.starting")}
+                  {launchStep === "preparing" ? t("launch.preparing")
+                    : launchStep === "checking_java" ? t("launch.checking_java")
+                    : launchStep === "building_args" ? t("launch.building_args")
+                    : launchStep === "starting" ? t("launch.starting")
+                    : t("instanceDetails.starting")}
                 </>
               ) : !(instance?.is_server || instance?.is_proxy) && !activeAccountId ? (
                 <>

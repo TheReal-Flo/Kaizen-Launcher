@@ -1,6 +1,7 @@
 use crate::db::accounts::Account;
 use crate::db::instances::Instance;
 use crate::error::{AppError, AppResult};
+use crate::launcher::runner::LaunchProgressEvent;
 use crate::launcher::{java, runner};
 use crate::minecraft::{installer, versions};
 use crate::modloader::{self, paper, LoaderType};
@@ -1530,6 +1531,25 @@ pub async fn launch_instance(
     instance_id: String,
     account_id: String,
 ) -> AppResult<()> {
+    let instance_id_clone = instance_id.clone();
+    let total_steps: u8 = 4;
+
+    // Helper to emit launch progress
+    let emit_progress = |step: &str, step_index: u8| {
+        let _ = app.emit(
+            "launch-progress",
+            LaunchProgressEvent {
+                instance_id: instance_id_clone.clone(),
+                step: step.to_string(),
+                step_index,
+                total_steps,
+            },
+        );
+    };
+
+    // Step 1: Preparing - loading instance data
+    emit_progress("preparing", 1);
+
     let state_guard = state.read().await;
 
     // Get the instance
@@ -1605,6 +1625,15 @@ pub async fn launch_instance(
 
     // Check if this is a server/proxy instance using instance flag
     if instance.is_server {
+        // Step 2: Checking Java for server
+        emit_progress("checking_java", 2);
+
+        // Step 3: Loading server configuration
+        emit_progress("building_args", 3);
+
+        // Step 4: Starting server
+        emit_progress("starting", 4);
+
         // Launch server (no account needed)
         let stdin_handles = state_guard.server_stdin_handles.clone();
         let running_tunnels = state_guard.running_tunnels.clone();
@@ -1620,11 +1649,17 @@ pub async fn launch_instance(
         )
         .await?;
     } else {
+        // Step 2: Checking Java / Loading account
+        emit_progress("checking_java", 2);
+
         // Launch client (requires account)
         let account = Account::get_by_id(&state_guard.db, &account_id)
             .await
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::Auth("Account not found".to_string()))?;
+
+        // Step 3: Loading version details
+        emit_progress("building_args", 3);
 
         // Load version details from instance
         let version_file = instance_dir.join("client").join("version.json");
@@ -1633,6 +1668,9 @@ pub async fn launch_instance(
             .map_err(|e| AppError::Io(format!("Failed to read version file: {}", e)))?;
         let version: versions::VersionDetails = serde_json::from_str(&version_content)
             .map_err(|e| AppError::Io(format!("Failed to parse version file: {}", e)))?;
+
+        // Step 4: Starting the game
+        emit_progress("starting", 4);
 
         // Launch Minecraft client
         runner::launch_minecraft(

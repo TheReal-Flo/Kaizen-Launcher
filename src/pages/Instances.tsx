@@ -71,6 +71,7 @@ interface InstanceCardProps {
   isInstalled: boolean
   isInstalling: boolean
   isLaunching: boolean
+  launchStep: string | null
   isRunning: boolean
   isStopping: boolean
   iconUrl: string | null
@@ -93,6 +94,7 @@ const InstanceCard = memo(function InstanceCard({
   isInstalled,
   isInstalling,
   isLaunching,
+  launchStep,
   isRunning,
   isStopping,
   iconUrl,
@@ -107,6 +109,17 @@ const InstanceCard = memo(function InstanceCard({
   formatPlaytime,
   t,
 }: InstanceCardProps) {
+  // Helper to get launch step text
+  const getLaunchStepText = () => {
+    if (!launchStep) return t("home.launching")
+    switch (launchStep) {
+      case "preparing": return t("launch.preparing")
+      case "checking_java": return t("launch.checking_java")
+      case "building_args": return t("launch.building_args")
+      case "starting": return t("launch.starting")
+      default: return t("home.launching")
+    }
+  }
   if (viewMode === "list") {
     return (
       <div
@@ -419,7 +432,7 @@ const InstanceCard = memo(function InstanceCard({
               ) : (
                 <Play className="h-4 w-4" />
               )}
-              {isLaunching ? t("home.launching") : t("instances.play")}
+              {isLaunching ? getLaunchStepText() : t("instances.play")}
             </Button>
           ) : (
             <Button
@@ -459,6 +472,7 @@ export function Instances() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [installedVersions, setInstalledVersions] = useState<Set<string>>(new Set())
   const [launchingInstance, setLaunchingInstance] = useState<string | null>(null)
+  const [launchStep, setLaunchStep] = useState<string | null>(null)
 
   // Use global installation store
   const { installations, startInstallation, isInstalling, getInstallation } = useInstallationStore()
@@ -665,6 +679,13 @@ export function Instances() {
     loadInstances()
     checkJava()
 
+    // Listen for launch progress events
+    const unlistenLaunchProgress = listen<{ instance_id: string; step: string }>("launch-progress", (event) => {
+      const { step } = event.payload
+      // Always update - we filter by instance in the UI
+      setLaunchStep(step)
+    })
+
     // Listen for instance status changes
     const unlistenStatus = listen<{ instance_id: string; status: string }>("instance-status", (event) => {
       const { instance_id, status } = event.payload
@@ -677,6 +698,9 @@ export function Instances() {
         }
         return newSet
       })
+      // Clear launch step when instance starts or stops
+      setLaunchStep(null)
+      setLaunchingInstance(null)
     })
 
     // Listen for install completion to reload instances
@@ -687,6 +711,7 @@ export function Instances() {
     })
 
     return () => {
+      unlistenLaunchProgress.then(fn => fn()).catch(() => {})
       unlistenStatus.then(fn => fn()).catch(() => {})
       unlistenInstall.then(fn => fn()).catch(() => {})
     }
@@ -832,6 +857,7 @@ export function Instances() {
         isInstalled={installedVersions.has(instance.id)}
         isInstalling={isInstalling(instance.id)}
         isLaunching={launchingInstance === instance.id}
+        launchStep={launchingInstance === instance.id ? launchStep : null}
         isRunning={runningInstances.has(instance.id)}
         isStopping={stoppingInstance === instance.id}
         iconUrl={getIconUrl(instance.id)}
@@ -847,7 +873,7 @@ export function Instances() {
         t={t}
       />
     )
-  }, [viewMode, installedVersions, installations, isInstalling, getInstallation, launchingInstance, runningInstances, stoppingInstance, getIconUrl, favorites, handleNavigate, toggleFavorite, handleLaunch, handleInstall, handleStop, openDeleteDialog, formatPlaytime, t])
+  }, [viewMode, installedVersions, installations, isInstalling, getInstallation, launchingInstance, launchStep, runningInstances, stoppingInstance, getIconUrl, favorites, handleNavigate, toggleFavorite, handleLaunch, handleInstall, handleStop, openDeleteDialog, formatPlaytime, t])
 
   const sortLabels: Record<SortBy, string> = {
     name: t("common.name"),
