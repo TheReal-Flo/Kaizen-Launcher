@@ -2,6 +2,15 @@
 
 All notable changes to Kaizen Launcher will be documented in this file.
 
+## [0.2.1] - 2025-12-10
+
+### Added
+- Full self-hosted runner support (macOS, Linux, Windows)
+
+### Fixed
+- Corrected reqwest dependency version (0.12 instead of 0.2.0)
+- Fixed self-hosted runner labels for standard GitHub format
+
 ## [0.2.0] - 2025-12-10
 
 ### Added
