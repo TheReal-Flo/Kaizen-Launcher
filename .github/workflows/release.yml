@@ -75,11 +75,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      # For GitHub-hosted runners: setup Node with cache
+      - name: Setup Node.js (GitHub-hosted)
+        if: github.event.inputs.use_self_hosted != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+
+      # For self-hosted runners: just verify Node is installed (no download/cache)
+      - name: Verify Node.js (Self-hosted)
+        if: github.event.inputs.use_self_hosted == 'true'
+        run: |
+          echo "Node version: $(node --version)"
+          echo "npm version: $(npm --version)"
+        shell: bash
 
       # Install Rust - manual installation to avoid bash dependency on Windows
       - name: Install Rust (Unix)
