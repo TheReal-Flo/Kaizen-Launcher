@@ -11,6 +11,7 @@ import { useTranslation, localeNames, Locale } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { invoke } from "@tauri-apps/api/core"
 import { getVersion } from "@tauri-apps/api/app"
+import { open } from "@tauri-apps/plugin-dialog"
 import { toast } from "sonner"
 import { ThemeCustomizer } from "@/components/theme/ThemeCustomizer"
 import { useUpdateChecker } from "@/hooks/useUpdateChecker"
@@ -55,6 +56,12 @@ interface InstanceStorageInfo {
   last_played: string | null
 }
 
+interface InstancesDirectoryInfo {
+  current_path: string
+  default_path: string
+  is_custom: boolean
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
   const k = 1024
@@ -86,6 +93,8 @@ export function Settings() {
   const [instancesStorage, setInstancesStorage] = useState<InstanceStorageInfo[]>([])
   const [loadingStorage, setLoadingStorage] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
+  const [instancesDir, setInstancesDir] = useState<InstancesDirectoryInfo | null>(null)
+  const [changingInstancesDir, setChangingInstancesDir] = useState(false)
 
   // Memory settings (stored in localStorage for now)
   const [minMemory, setMinMemory] = useState(() => {
@@ -129,12 +138,14 @@ export function Settings() {
   const loadStorageData = useCallback(async () => {
     setLoadingStorage(true)
     try {
-      const [storage, instances] = await Promise.all([
+      const [storage, instances, dirInfo] = await Promise.all([
         invoke<StorageInfo>("get_storage_info"),
         invoke<InstanceStorageInfo[]>("get_instances_storage"),
+        invoke<InstancesDirectoryInfo>("get_instances_directory"),
       ])
       setStorageInfo(storage)
       setInstancesStorage(instances)
+      setInstancesDir(dirInfo)
     } catch (error) {
       console.error("Failed to load storage data:", error)
       toast.error(t("settings.unableToLoadStorage"))
@@ -220,6 +231,51 @@ export function Settings() {
       toast.error(t("settings.clearCacheError"))
     } finally {
       setClearingCache(false)
+    }
+  }
+
+  const handleChangeInstancesDir = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t("settings.selectFolder"),
+      })
+
+      if (selected) {
+        setChangingInstancesDir(true)
+        await invoke("set_instances_directory", { path: selected })
+        await loadStorageData()
+        toast.success(t("settings.pathChanged"))
+      }
+    } catch (error) {
+      console.error("Failed to change instances directory:", error)
+      toast.error(t("settings.pathChangeError"))
+    } finally {
+      setChangingInstancesDir(false)
+    }
+  }
+
+  const handleResetInstancesDir = async () => {
+    setChangingInstancesDir(true)
+    try {
+      await invoke("set_instances_directory", { path: null })
+      await loadStorageData()
+      toast.success(t("settings.pathReset"))
+    } catch (error) {
+      console.error("Failed to reset instances directory:", error)
+      toast.error(t("settings.pathChangeError"))
+    } finally {
+      setChangingInstancesDir(false)
+    }
+  }
+
+  const handleOpenInstancesFolder = async () => {
+    try {
+      await invoke("open_instances_folder")
+    } catch (error) {
+      console.error("Failed to open instances folder:", error)
+      toast.error(t("settings.openFolderError"))
     }
   }
 
@@ -627,6 +683,72 @@ export function Settings() {
                       </p>
                     </div>
                   </div>
+
+                  <Separator />
+
+                  {/* Instances directory */}
+                  {instancesDir && (
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium">{t("settings.instancesDirectory")}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("settings.instancesDirectoryDesc")}
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-xs px-2 py-0.5 rounded-full",
+                            instancesDir.is_custom
+                              ? "bg-blue-500/20 text-blue-500"
+                              : "bg-muted text-muted-foreground"
+                          )}>
+                            {instancesDir.is_custom ? t("settings.customPath") : t("settings.defaultPath")}
+                          </span>
+                        </div>
+                        <p className="text-sm font-mono truncate" title={instancesDir.current_path}>
+                          {instancesDir.current_path}
+                        </p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleChangeInstancesDir}
+                          disabled={changingInstancesDir}
+                          className="gap-2"
+                        >
+                          {changingInstancesDir ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FolderOpen className="h-4 w-4" />
+                          )}
+                          {t("settings.changePath")}
+                        </Button>
+                        {instancesDir.is_custom && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleResetInstancesDir}
+                            disabled={changingInstancesDir}
+                          >
+                            {t("settings.resetToDefault")}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleOpenInstancesFolder}
+                          className="gap-2"
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                          {t("settings.openInstancesFolder")}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   <Separator />
 

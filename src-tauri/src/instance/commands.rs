@@ -186,8 +186,9 @@ pub async fn create_instance(
         })
         .collect::<String>();
 
-    // Create instance directory structure
-    let instances_dir = state_guard.data_dir.join("instances").join(&safe_name);
+    // Create instance directory structure (use custom or default instances dir)
+    let base_instances_dir = state_guard.get_instances_dir().await;
+    let instances_dir = base_instances_dir.join(&safe_name);
 
     // Check if instance directory already exists
     if instances_dir.exists() {
@@ -1536,7 +1537,8 @@ pub async fn get_storage_info(state: State<'_, SharedState>) -> AppResult<Storag
     let state_guard = state.read().await;
     let data_dir = &state_guard.data_dir;
 
-    let instances_dir = data_dir.join("instances");
+    // Use custom instances directory if set
+    let instances_dir = state_guard.get_instances_dir().await;
     let java_dir = data_dir.join("java");
     let cache_dir = data_dir.join("cache");
 
@@ -1648,4 +1650,79 @@ pub async fn clear_cache(state: State<'_, SharedState>) -> AppResult<u64> {
         .map_err(|e| AppError::Io(format!("Failed to recreate cache directory: {}", e)))?;
 
     Ok(size)
+}
+
+/// Get the current instances directory configuration
+#[derive(serde::Serialize)]
+pub struct InstancesDirectoryInfo {
+    pub current_path: String,
+    pub default_path: String,
+    pub is_custom: bool,
+}
+
+#[tauri::command]
+pub async fn get_instances_directory(state: State<'_, SharedState>) -> AppResult<InstancesDirectoryInfo> {
+    let state_guard = state.read().await;
+    let default_path = state_guard.get_default_instances_dir();
+    let current_path = state_guard.get_instances_dir().await;
+    let is_custom = current_path != default_path;
+
+    Ok(InstancesDirectoryInfo {
+        current_path: current_path.to_string_lossy().to_string(),
+        default_path: default_path.to_string_lossy().to_string(),
+        is_custom,
+    })
+}
+
+/// Set a custom instances directory
+#[tauri::command]
+pub async fn set_instances_directory(
+    state: State<'_, SharedState>,
+    path: Option<String>,
+) -> AppResult<()> {
+    let state_guard = state.read().await;
+
+    match path {
+        Some(custom_path) => {
+            // Validate the path exists or can be created
+            let path = std::path::PathBuf::from(&custom_path);
+            if !path.exists() {
+                fs::create_dir_all(&path)
+                    .await
+                    .map_err(|e| AppError::Io(format!("Failed to create directory: {}", e)))?;
+            }
+
+            // Save to settings
+            crate::db::settings::set_setting(&state_guard.db, "instances_dir", &custom_path)
+                .await
+                .map_err(AppError::from)?;
+        }
+        None => {
+            // Reset to default - remove the setting
+            sqlx::query("DELETE FROM settings WHERE key = 'instances_dir'")
+                .execute(&state_guard.db)
+                .await
+                .map_err(AppError::from)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Open the instances directory in file manager
+#[tauri::command]
+pub async fn open_instances_folder(state: State<'_, SharedState>) -> AppResult<()> {
+    let state_guard = state.read().await;
+    let instances_dir = state_guard.get_instances_dir().await;
+
+    // Ensure directory exists
+    if !instances_dir.exists() {
+        fs::create_dir_all(&instances_dir)
+            .await
+            .map_err(|e| AppError::Io(format!("Failed to create instances directory: {}", e)))?;
+    }
+
+    open_folder_in_file_manager(&instances_dir)?;
+
+    Ok(())
 }

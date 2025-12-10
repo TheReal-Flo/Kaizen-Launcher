@@ -26,6 +26,24 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Get the instances directory - either custom or default
+    pub async fn get_instances_dir(&self) -> std::path::PathBuf {
+        // Check for custom instances directory in settings
+        if let Ok(Some(custom_dir)) = crate::db::settings::get_setting(&self.db, "instances_dir").await {
+            let path = std::path::PathBuf::from(&custom_dir);
+            if path.exists() || std::fs::create_dir_all(&path).is_ok() {
+                return path;
+            }
+        }
+        // Default to data_dir/instances
+        self.data_dir.join("instances")
+    }
+
+    /// Get the default instances directory path
+    pub fn get_default_instances_dir(&self) -> std::path::PathBuf {
+        self.data_dir.join("instances")
+    }
+
     pub async fn new() -> anyhow::Result<Self> {
         let data_dir = crate::utils::paths::get_data_dir()?;
 
