@@ -2,6 +2,13 @@
 
 All notable changes to Kaizen Launcher will be documented in this file.
 
+## [0.1.21] - 2025-12-10
+
+### Added
+- add Docker-based release system with auto versioning and signing
+
+### Technical
+- pre-release changes
 ## [0.1.20] - 2025-12-10
 
 ### Added
