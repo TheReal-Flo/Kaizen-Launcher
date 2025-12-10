@@ -2,22 +2,28 @@
 
 All notable changes to Kaizen Launcher will be documented in this file.
 
-## [0.1.22] - 2025-12-10
-
-### Technical
-- pre-release changes
-## [0.1.21] - 2025-12-10
+## [0.2.0] - 2025-12-10
 
 ### Added
-- add Docker-based release system with auto versioning and signing
+- Docker-based cross-platform build system
+  - Dockerfile for Linux builds (Ubuntu 22.04, Node 20, Rust)
+  - Dockerfile for Windows cross-compilation using cargo-xwin
+  - docker-compose.yml with volume caching for faster rebuilds
+  - release-docker.sh script for building all platforms locally
+- npm scripts for Docker builds: `docker:build`, `docker:linux`, `docker:windows`, `docker:release`
+- Self-hosted runner support for faster CI/CD builds
+- Local release script with auto-versioning and signing
+
+### Fixed
+- npm optional dependencies bug with @tauri-apps/cli (cross-platform clean)
+- Window dragging on custom title bar
+- Modpack installation notification tracking
 
 ### Technical
-- pre-release changes
-## [0.1.20] - 2025-12-10
+- Optimized GitHub Actions workflows with better caching
+- Added cargo-xwin for MSVC-compatible Windows cross-compilation
 
-### Added
-- add Docker-based release system with auto versioning and signing
-## [0.1.19] - 2025-12-10
+## [0.1.18] - 2025-12-10
 
 ### Added
 - Docker-based cross-platform build system
