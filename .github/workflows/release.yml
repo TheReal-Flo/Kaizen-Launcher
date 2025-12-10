@@ -174,9 +174,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      # Only clean npm cache on GitHub-hosted runners (self-hosted has persistent cache)
-      - name: Clean npm cache (GitHub-hosted Unix)
-        if: github.event.inputs.use_self_hosted != 'true' && runner.os != 'Windows'
+      # Clean npm cache - always on GitHub-hosted, and on Linux self-hosted (Docker has no persistent cache)
+      - name: Clean npm cache (Unix)
+        if: runner.os != 'Windows' && (github.event.inputs.use_self_hosted != 'true' || runner.os == 'Linux')
         run: rm -rf node_modules package-lock.json
 
       - name: Clean npm cache (GitHub-hosted Windows)
@@ -186,9 +186,8 @@ jobs:
           if (Test-Path package-lock.json) { Remove-Item -Force package-lock.json }
         shell: powershell
 
-      # Use npm ci for GitHub-hosted (clean install), npm install for self-hosted (uses cache)
       - name: Install npm dependencies
-        run: ${{ github.event.inputs.use_self_hosted == 'true' && 'npm install' || 'npm ci' }}
+        run: npm install
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.5
