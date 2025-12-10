@@ -57,21 +57,21 @@ jobs:
           # Linux - GitHub hosted or self-hosted
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            self_hosted_label: linux-x64
+            self_hosted_runs_on: '["self-hosted", "Linux", "X64"]'
           # macOS ARM - GitHub hosted or self-hosted Mac
           - platform: macos-latest
             target: aarch64-apple-darwin
-            self_hosted_label: macos-arm64
+            self_hosted_runs_on: '["self-hosted", "macOS", "ARM64"]'
           # macOS x86 (cross-compile on ARM)
           - platform: macos-latest
             target: x86_64-apple-darwin
-            self_hosted_label: macos-arm64
+            self_hosted_runs_on: '["self-hosted", "macOS", "ARM64"]'
           # Windows - GitHub hosted or self-hosted
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            self_hosted_label: windows-x64
+            self_hosted_runs_on: '["self-hosted", "Windows", "X64"]'
 
-    runs-on: ${{ github.event.inputs.use_self_hosted == 'true' && matrix.self_hosted_label || matrix.platform }}
+    runs-on: ${{ github.event.inputs.use_self_hosted == 'true' && fromJSON(matrix.self_hosted_runs_on) || matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
