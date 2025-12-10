@@ -93,29 +93,38 @@ jobs:
           cache: 'npm'
 
       # For self-hosted runners: just verify Node is installed (no download/cache)
-      - name: Verify Node.js (Self-hosted)
-        if: github.event.inputs.use_self_hosted == 'true'
+      - name: Verify Node.js (Self-hosted Unix)
+        if: github.event.inputs.use_self_hosted == 'true' && runner.os != 'Windows'
         run: |
           echo "Node version: $(node --version)"
           echo "npm version: $(npm --version)"
-        shell: bash
+
+      - name: Verify Node.js (Self-hosted Windows)
+        if: github.event.inputs.use_self_hosted == 'true' && runner.os == 'Windows'
+        run: |
+          Write-Host "Node version: $(node --version)"
+          Write-Host "npm version: $(npm --version)"
+        shell: powershell
 
       # Self-hosted: just verify Rust and add target (no update/download)
       - name: Verify Rust (Self-hosted Unix)
         if: github.event.inputs.use_self_hosted == 'true' && runner.os != 'Windows'
         run: |
-          # Find rustup location
+          # Find rustup location and use full path
           if [ -f "/usr/local/cargo/bin/rustup" ]; then
             echo "/usr/local/cargo/bin" >> $GITHUB_PATH
-            RUSTUP="/usr/local/cargo/bin/rustup"
+            export PATH="/usr/local/cargo/bin:$PATH"
+            echo "Rust version: $(/usr/local/cargo/bin/rustup --version)"
+            /usr/local/cargo/bin/rustup target add ${{ matrix.target }} 2>/dev/null || true
           elif [ -f "$HOME/.cargo/bin/rustup" ]; then
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-            RUSTUP="$HOME/.cargo/bin/rustup"
+            export PATH="$HOME/.cargo/bin:$PATH"
+            echo "Rust version: $($HOME/.cargo/bin/rustup --version)"
+            "$HOME/.cargo/bin/rustup" target add ${{ matrix.target }} 2>/dev/null || true
           else
-            RUSTUP="rustup"
+            echo "Rust version: $(rustup --version)"
+            rustup target add ${{ matrix.target }} 2>/dev/null || true
           fi
-          echo "Rust version: $($RUSTUP --version)"
-          $RUSTUP target add ${{ matrix.target }} 2>/dev/null || true
 
       - name: Verify Rust (Self-hosted Windows)
         if: github.event.inputs.use_self_hosted == 'true' && runner.os == 'Windows'
