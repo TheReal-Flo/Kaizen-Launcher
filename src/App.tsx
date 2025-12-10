@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react"
+import { lazy, Suspense, useState, useEffect, useCallback } from "react"
 import { BrowserRouter, Routes, Route } from "react-router-dom"
 import { Toaster } from "sonner"
 import { Loader2 } from "lucide-react"
@@ -6,6 +6,7 @@ import { MainLayout } from "@/components/layout/MainLayout"
 import { Home } from "@/pages/Home"
 import { OnboardingSidebar } from "@/components/onboarding/OnboardingSidebar"
 import { UpdateNotification } from "@/components/UpdateNotification"
+import { DevMonitor } from "@/components/DevMonitor"
 import { useOnboardingStore } from "@/stores/onboardingStore"
 import { useTheme } from "@/hooks/useTheme"
 import { useUpdateChecker } from "@/hooks/useUpdateChecker"
@@ -27,6 +28,9 @@ function PageLoader() {
   )
 }
 
+// Only show DevMonitor in development mode
+const isDev = import.meta.env.DEV
+
 function App() {
   const { completed, setCompleted } = useOnboardingStore()
   const { resolvedTheme } = useTheme()
@@ -39,6 +43,24 @@ function App() {
     downloadAndInstall,
     dismissUpdate,
   } = useUpdateChecker(true)
+
+  // Dev Monitor state
+  const [devMonitorVisible, setDevMonitorVisible] = useState(false)
+
+  // Keyboard shortcut: Ctrl+Shift+D (or Cmd+Shift+D on Mac)
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "d") {
+      e.preventDefault()
+      setDevMonitorVisible(prev => !prev)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isDev) return
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [handleKeyDown])
 
   return (
     <>
@@ -74,6 +96,12 @@ function App() {
         onDownload={downloadAndInstall}
         onDismiss={dismissUpdate}
       />
+      {isDev && (
+        <DevMonitor
+          visible={devMonitorVisible}
+          onClose={() => setDevMonitorVisible(false)}
+        />
+      )}
     </>
   )
 }

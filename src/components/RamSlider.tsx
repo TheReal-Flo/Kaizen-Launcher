@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo } from "react"
 import { invoke } from "@tauri-apps/api/core"
-import { toast } from "sonner"
 import { Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -33,9 +32,8 @@ export function RamSlider({ value, onChange, label, minValue = 512, recommendedV
       .then(setSystemMemory)
       .catch((err) => {
         console.error("Failed to get system memory:", err)
-        toast.error(t("ram.memoryError"))
       })
-  }, [t])
+  }, [])
 
   const maxRam = useMemo(() => {
     if (!systemMemory) return 16384
@@ -189,43 +187,20 @@ export function RamSlider({ value, onChange, label, minValue = 512, recommendedV
       </div>
 
       {/* Custom slider with colored track */}
-      <div className="relative">
+      <div className="relative ram-slider-container">
         <input
           type="range"
           min={0}
           max={steps.length - 1}
           value={valueIndex}
           onChange={handleSliderChange}
-          className="w-full h-2 rounded-full appearance-none cursor-pointer"
+          className="w-full h-2 rounded-full appearance-none cursor-pointer ram-slider"
           style={{
             background: trackGradient,
+            // @ts-expect-error CSS custom property
+            "--thumb-color": getZoneBgColor(zone),
           }}
         />
-        <style>{`
-          input[type="range"]::-webkit-slider-thumb {
-            appearance: none;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: ${getZoneBgColor(zone)};
-            border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            cursor: pointer;
-            transition: transform 0.1s ease;
-          }
-          input[type="range"]::-webkit-slider-thumb:hover {
-            transform: scale(1.1);
-          }
-          input[type="range"]::-moz-range-thumb {
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: ${getZoneBgColor(zone)};
-            border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            cursor: pointer;
-          }
-        `}</style>
       </div>
 
       {/* Labels under slider */}

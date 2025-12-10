@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { invoke } from "@tauri-apps/api/core"
 import { open } from "@tauri-apps/plugin-dialog"
@@ -11,21 +11,32 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { RamSlider } from "@/components/RamSlider"
-import { JvmTemplates } from "@/components/JvmTemplates"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
-import { ModrinthBrowser } from "@/components/ModrinthBrowser"
-import { ConfigEditor } from "@/components/ConfigEditor"
-import { ServerConsole } from "@/components/ServerConsole"
-import { ServerPropertiesEditor } from "@/components/ServerPropertiesEditor"
-import { ServerStats } from "@/components/ServerStats"
-import { ServerJvmTemplates } from "@/components/ServerJvmTemplates"
-import { JavaSelector } from "@/components/JavaSelector"
-import { TunnelConfig } from "@/components/TunnelConfig"
 import { useTranslation } from "@/i18n"
 import { Wrench, Terminal, Server, Globe } from "lucide-react"
+
+// Lazy load heavy components - only loaded when their tab is selected
+const RamSlider = lazy(() => import("@/components/RamSlider").then(m => ({ default: m.RamSlider })))
+const JvmTemplates = lazy(() => import("@/components/JvmTemplates").then(m => ({ default: m.JvmTemplates })))
+const ServerJvmTemplates = lazy(() => import("@/components/ServerJvmTemplates").then(m => ({ default: m.ServerJvmTemplates })))
+const JavaSelector = lazy(() => import("@/components/JavaSelector").then(m => ({ default: m.JavaSelector })))
+const ModrinthBrowser = lazy(() => import("@/components/ModrinthBrowser").then(m => ({ default: m.ModrinthBrowser })))
+const ConfigEditor = lazy(() => import("@/components/ConfigEditor").then(m => ({ default: m.ConfigEditor })))
+const ServerConsole = lazy(() => import("@/components/ServerConsole").then(m => ({ default: m.ServerConsole })))
+const ServerPropertiesEditor = lazy(() => import("@/components/ServerPropertiesEditor").then(m => ({ default: m.ServerPropertiesEditor })))
+const ServerStats = lazy(() => import("@/components/ServerStats").then(m => ({ default: m.ServerStats })))
+const TunnelConfig = lazy(() => import("@/components/TunnelConfig").then(m => ({ default: m.TunnelConfig })))
+
+// Loading fallback for lazy components
+function ComponentLoader() {
+  return (
+    <div className="flex items-center justify-center py-8">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  )
+}
 
 type LogLevel = "ERROR" | "WARN" | "INFO" | "DEBUG" | "FATAL" | "TRACE" | "ALL"
 type SortOption = "date-desc" | "date-asc" | "name-asc" | "name-desc" | "size-desc" | "size-asc"
@@ -932,10 +943,12 @@ export function InstanceDetails() {
         {(instance?.is_server || instance?.is_proxy) && (
           <TabsContent value="console" className="mt-4 space-y-4">
             {/* Server Stats */}
-            <ServerStats
-              instanceId={instanceId!}
-              isRunning={isRunning}
-            />
+            <Suspense fallback={<ComponentLoader />}>
+              <ServerStats
+                instanceId={instanceId!}
+                isRunning={isRunning}
+              />
+            </Suspense>
 
             {/* Server Addresses */}
             {isRunning && (
@@ -1021,10 +1034,12 @@ export function InstanceDetails() {
                 </div>
               </CardHeader>
               <CardContent>
-                <ServerConsole
-                  instanceId={instanceId!}
-                  isRunning={isRunning}
-                />
+                <Suspense fallback={<ComponentLoader />}>
+                  <ServerConsole
+                    instanceId={instanceId!}
+                    isRunning={isRunning}
+                  />
+                </Suspense>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1118,46 +1133,52 @@ export function InstanceDetails() {
               {/* Memory Settings - Side by side on larger screens */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">{t("instances.memory")}</Label>
-                <div className="grid gap-4 md:grid-cols-2 p-4 rounded-lg border bg-muted/30">
-                  <RamSlider
-                    label="Minimum"
-                    value={memoryMin}
-                    onChange={setMemoryMin}
-                    minValue={512}
-                    recommendedValue="min"
-                  />
-                  <RamSlider
-                    label="Maximum"
-                    value={memoryMax}
-                    onChange={setMemoryMax}
-                    minValue={memoryMin}
-                    recommendedValue="max"
-                  />
-                </div>
+                <Suspense fallback={<ComponentLoader />}>
+                  <div className="grid gap-4 md:grid-cols-2 p-4 rounded-lg border bg-muted/30">
+                    <RamSlider
+                      label="Minimum"
+                      value={memoryMin}
+                      onChange={setMemoryMin}
+                      minValue={512}
+                      recommendedValue="min"
+                    />
+                    <RamSlider
+                      label="Maximum"
+                      value={memoryMax}
+                      onChange={setMemoryMax}
+                      minValue={memoryMin}
+                      recommendedValue="max"
+                    />
+                  </div>
+                </Suspense>
               </div>
 
               {/* Java Selection */}
-              <JavaSelector
-                value={javaPath}
-                onChange={setJavaPath}
-                recommendedVersion={21}
-              />
+              <Suspense fallback={<ComponentLoader />}>
+                <JavaSelector
+                  value={javaPath}
+                  onChange={setJavaPath}
+                  recommendedVersion={21}
+                />
+              </Suspense>
 
               {/* JVM Arguments with Templates */}
-              {(instance?.is_server || instance?.is_proxy) ? (
-                <ServerJvmTemplates
-                  value={jvmArgs}
-                  onChange={setJvmArgs}
-                  ramMb={memoryMax}
-                />
-              ) : (
-                <JvmTemplates
-                  value={jvmArgs}
-                  onChange={setJvmArgs}
-                  ramMb={memoryMax}
-                  loader={instance?.loader || null}
-                />
-              )}
+              <Suspense fallback={<ComponentLoader />}>
+                {(instance?.is_server || instance?.is_proxy) ? (
+                  <ServerJvmTemplates
+                    value={jvmArgs}
+                    onChange={setJvmArgs}
+                    ramMb={memoryMax}
+                  />
+                ) : (
+                  <JvmTemplates
+                    value={jvmArgs}
+                    onChange={setJvmArgs}
+                    ramMb={memoryMax}
+                    loader={instance?.loader || null}
+                  />
+                )}
+              </Suspense>
 
               {/* Save Button */}
               <Button onClick={handleSaveSettings} disabled={isSaving} className="gap-2">
@@ -1181,10 +1202,12 @@ export function InstanceDetails() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ServerPropertiesEditor
-                  instanceId={instanceId!}
-                  isRunning={isRunning}
-                />
+                <Suspense fallback={<ComponentLoader />}>
+                  <ServerPropertiesEditor
+                    instanceId={instanceId!}
+                    isRunning={isRunning}
+                  />
+                </Suspense>
               </CardContent>
             </Card>
           )}
@@ -1364,14 +1387,16 @@ export function InstanceDetails() {
         {/* Browse Content Tab (Modrinth with tabs for different content types) */}
         {contentType !== "none" && (
         <TabsContent value="content" className="mt-4">
-          <ModrinthBrowser
-            instanceId={instanceId!}
-            mcVersion={instance.mc_version}
-            loader={instance.loader}
-            isServer={instance.is_server}
-            onModInstalled={handleContentChanged}
-            showContentTabs={!instance.is_server && !instance.is_proxy}
-          />
+          <Suspense fallback={<ComponentLoader />}>
+            <ModrinthBrowser
+              instanceId={instanceId!}
+              mcVersion={instance.mc_version}
+              loader={instance.loader}
+              isServer={instance.is_server}
+              onModInstalled={handleContentChanged}
+              showContentTabs={!instance.is_server && !instance.is_proxy}
+            />
+          </Suspense>
         </TabsContent>
         )}
 
@@ -1606,7 +1631,9 @@ export function InstanceDetails() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ConfigEditor instanceId={instanceId!} />
+              <Suspense fallback={<ComponentLoader />}>
+                <ConfigEditor instanceId={instanceId!} />
+              </Suspense>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1614,11 +1641,13 @@ export function InstanceDetails() {
         {/* Tunnel Tab - Server only */}
         {(instance?.is_server || instance?.is_proxy) && (
           <TabsContent value="tunnel" className="mt-4">
-            <TunnelConfig
-              instanceId={instanceId!}
-              serverPort={25565}
-              isServerRunning={isRunning}
-            />
+            <Suspense fallback={<ComponentLoader />}>
+              <TunnelConfig
+                instanceId={instanceId!}
+                serverPort={25565}
+                isServerRunning={isRunning}
+              />
+            </Suspense>
           </TabsContent>
         )}
 
