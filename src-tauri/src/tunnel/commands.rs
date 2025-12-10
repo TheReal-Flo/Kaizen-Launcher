@@ -138,6 +138,37 @@ pub async fn update_playit_secret(
     Ok(())
 }
 
+/// Save tunnel URL for persistence
+#[tauri::command]
+pub async fn save_tunnel_url(
+    state: tauri::State<'_, SharedState>,
+    instance_id: String,
+    url: String,
+) -> AppResult<()> {
+    let state = state.read().await;
+
+    let result = sqlx::query(
+        r#"
+        UPDATE tunnel_configs
+        SET tunnel_url = ?
+        WHERE instance_id = ?
+        "#,
+    )
+    .bind(&url)
+    .bind(&instance_id)
+    .execute(&state.db)
+    .await?;
+
+    tracing::info!(
+        "save_tunnel_url: instance_id={}, url={}, rows_affected={}",
+        instance_id,
+        url,
+        result.rows_affected()
+    );
+
+    Ok(())
+}
+
 /// Start a tunnel for an instance
 #[tauri::command]
 pub async fn start_tunnel(

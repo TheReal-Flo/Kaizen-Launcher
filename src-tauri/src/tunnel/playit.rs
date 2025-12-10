@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::state::SharedState;
 use crate::tunnel::{
     agent::get_agent_binary_path, RunningTunnel, TunnelConfig, TunnelProvider, TunnelStatus,
     TunnelStatusEvent, TunnelUrlEvent,
@@ -8,7 +9,7 @@ use regex::Regex;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::RwLock;
@@ -162,9 +163,26 @@ pub async fn start_playit_tunnel(
                             "tunnel-url",
                             TunnelUrlEvent {
                                 instance_id: instance_id.clone(),
-                                url,
+                                url: url.clone(),
                             },
                         );
+
+                        // Save URL to database for persistence
+                        let state: tauri::State<SharedState> = app_handle.state();
+                        let db = {
+                            let s = state.blocking_read();
+                            s.db.clone()
+                        };
+                        let instance_id_for_save = instance_id.clone();
+                        let url_for_save = url;
+                        tokio::spawn(async move {
+                            let _ = sqlx::query("UPDATE tunnel_configs SET tunnel_url = ? WHERE instance_id = ?")
+                                .bind(&url_for_save)
+                                .bind(&instance_id_for_save)
+                                .execute(&db)
+                                .await;
+                            tracing::info!("Saved tunnel URL {} for instance {}", url_for_save, instance_id_for_save);
+                        });
                     }
                 }
 
@@ -192,9 +210,26 @@ pub async fn start_playit_tunnel(
                                     "tunnel-url",
                                     TunnelUrlEvent {
                                         instance_id: instance_id.clone(),
-                                        url: addr,
+                                        url: addr.clone(),
                                     },
                                 );
+
+                                // Save URL to database for persistence
+                                let state: tauri::State<SharedState> = app_handle.state();
+                                let db = {
+                                    let s = state.blocking_read();
+                                    s.db.clone()
+                                };
+                                let instance_id_for_save = instance_id.clone();
+                                let url_for_save = addr;
+                                tokio::spawn(async move {
+                                    let _ = sqlx::query("UPDATE tunnel_configs SET tunnel_url = ? WHERE instance_id = ?")
+                                        .bind(&url_for_save)
+                                        .bind(&instance_id_for_save)
+                                        .execute(&db)
+                                        .await;
+                                    tracing::info!("Saved tunnel URL {} for instance {}", url_for_save, instance_id_for_save);
+                                });
                             }
                         }
                     }

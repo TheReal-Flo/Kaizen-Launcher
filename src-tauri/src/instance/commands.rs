@@ -152,6 +152,7 @@ pub async fn create_instance(
     loader_version: Option<String>,
     is_server: Option<bool>,
     is_proxy: Option<bool>,
+    server_port: Option<i64>,
 ) -> AppResult<Instance> {
     let state_guard = state.read().await;
 
@@ -297,6 +298,7 @@ pub async fn create_instance(
         loader_version: loader_version.clone(),
         is_server,
         is_proxy,
+        server_port: server_port.unwrap_or(25565),
         modrinth_project_id: None,
     };
 
@@ -1761,4 +1763,33 @@ pub async fn open_instances_folder(state: State<'_, SharedState>) -> AppResult<(
     open_folder_in_file_manager(&instances_dir)?;
 
     Ok(())
+}
+
+/// Get used server ports by all server/proxy instances
+#[derive(Debug, Clone, Serialize)]
+pub struct UsedPort {
+    pub port: i64,
+    pub instance_name: String,
+    pub instance_id: String,
+}
+
+#[tauri::command]
+pub async fn get_used_server_ports(state: State<'_, SharedState>) -> AppResult<Vec<UsedPort>> {
+    let state_guard = state.read().await;
+
+    let instances = Instance::get_all(&state_guard.db)
+        .await
+        .map_err(AppError::from)?;
+
+    let used_ports: Vec<UsedPort> = instances
+        .into_iter()
+        .filter(|i| i.is_server || i.is_proxy)
+        .map(|i| UsedPort {
+            port: i.server_port,
+            instance_name: i.name,
+            instance_id: i.id,
+        })
+        .collect();
+
+    Ok(used_ports)
 }

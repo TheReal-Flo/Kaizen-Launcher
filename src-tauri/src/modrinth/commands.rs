@@ -903,6 +903,7 @@ pub async fn install_modrinth_modpack(
         loader_version: loader_version.clone(),
         is_server: false,
         is_proxy: false,
+        server_port: 25565,
         modrinth_project_id: Some(project_id.clone()),
     };
     let instance = Instance::create(&state_guard.db, create_data)

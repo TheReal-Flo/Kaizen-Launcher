@@ -112,6 +112,8 @@ export function CreateInstanceDialog({
   const [isLoadingLoaderVersions, setIsLoadingLoaderVersions] = useState(false)
 
   const [mode, setMode] = useState<"client" | "server" | "proxy">("client")
+  const [serverPort, setServerPort] = useState(25565)
+  const [usedPorts, setUsedPorts] = useState<{ port: number; instance_name: string }[]>([])
 
   // Get current loaders based on mode
   const currentLoaders = mode === "client"
@@ -120,10 +122,11 @@ export function CreateInstanceDialog({
       ? SERVER_LOADERS
       : PROXY_LOADERS
 
-  // Fetch versions when dialog opens
+  // Fetch versions and used ports when dialog opens
   useEffect(() => {
     if (open) {
       fetchVersions()
+      fetchUsedPorts()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, showSnapshots])
@@ -139,12 +142,27 @@ export function CreateInstanceDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loader, mcVersion])
 
-  // Reset loader when mode changes
+  // Reset loader when mode changes, set default port
   useEffect(() => {
     setLoader("vanilla")
     setLoaderVersion("")
     setLoaderVersions([])
+    // Set default port based on mode
+    if (mode === "proxy") {
+      setServerPort(25577) // Default Velocity port
+    } else if (mode === "server") {
+      setServerPort(25565) // Default Minecraft server port
+    }
   }, [mode])
+
+  const fetchUsedPorts = async () => {
+    try {
+      const ports = await invoke<{ port: number; instance_name: string }[]>("get_used_server_ports")
+      setUsedPorts(ports)
+    } catch (err) {
+      console.error("Failed to fetch used ports:", err)
+    }
+  }
 
   const fetchVersions = async () => {
     // Proxies don't need MC versions
@@ -216,6 +234,7 @@ export function CreateInstanceDialog({
         loaderVersion: loaderVersion || null,
         isServer: mode === "server" || mode === "proxy",
         isProxy: mode === "proxy",
+        serverPort: mode !== "client" ? serverPort : null,
       })
 
       // Reset form
@@ -224,6 +243,7 @@ export function CreateInstanceDialog({
       setLoader("vanilla")
       setLoaderVersion("")
       setMode("client")
+      setServerPort(25565)
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
@@ -389,6 +409,32 @@ export function CreateInstanceDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+
+          {/* Server Port (only for servers and proxies) */}
+          {mode !== "client" && (
+            <div className="grid gap-2">
+              <Label htmlFor="serverPort">{t("createInstance.serverPort")}</Label>
+              <Input
+                id="serverPort"
+                type="number"
+                min={1}
+                max={65535}
+                value={serverPort}
+                onChange={(e) => setServerPort(parseInt(e.target.value) || 25565)}
+              />
+              {usedPorts.find(p => p.port === serverPort) && (
+                <p className="text-sm text-yellow-500 flex items-center gap-1">
+                  <span>⚠️</span>
+                  {t("createInstance.portInUse", { name: usedPorts.find(p => p.port === serverPort)?.instance_name || "" })}
+                </p>
+              )}
+              {usedPorts.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {t("createInstance.usedPorts")}: {usedPorts.map(p => p.port).join(", ")}
+                </p>
+              )}
             </div>
           )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { toast } from "sonner"
@@ -124,6 +124,9 @@ export function TunnelConfig({ instanceId, serverPort, isServerRunning }: Tunnel
       if (running) {
         const status = await invoke<TunnelStatus>("get_tunnel_status", { instanceId })
         setTunnelStatus(status)
+      } else if (tunnelConfig?.tunnel_url) {
+        // Show last known URL even if tunnel is not running
+        setTunnelStatus({ type: "disconnected", url: tunnelConfig.tunnel_url })
       }
     } catch (err) {
       console.error("Failed to load tunnel config:", err)
@@ -140,13 +143,28 @@ export function TunnelConfig({ instanceId, serverPort, isServerRunning }: Tunnel
   useEffect(() => {
     const unlisten = listen<{ instance_id: string; provider: string; status: TunnelStatus }>(
       "tunnel-status",
-      (event) => {
+      async (event) => {
         if (event.payload.instance_id === instanceId) {
           setTunnelStatus(event.payload.status)
           if (event.payload.status.type === "disconnected") {
             setIsTunnelRunning(false)
           } else if (event.payload.status.type === "connected") {
             setIsTunnelRunning(true)
+            // Save the tunnel URL to config for persistence
+            if (event.payload.status.url) {
+              console.log("Saving tunnel URL:", event.payload.status.url)
+              try {
+                await invoke("save_tunnel_url", {
+                  instanceId,
+                  url: event.payload.status.url
+                })
+                console.log("Tunnel URL saved successfully")
+              } catch (err) {
+                console.error("Failed to save tunnel URL:", err)
+              }
+            } else {
+              console.log("No URL in connected status:", event.payload.status)
+            }
           }
         }
       }
@@ -182,36 +200,77 @@ export function TunnelConfig({ instanceId, serverPort, isServerRunning }: Tunnel
     }
   }
 
-  const handleSave = async () => {
+  // Use ref to store config id and other stable values for save
+  const configRef = useRef(config)
+  configRef.current = config
+
+  const saveConfig = useCallback(async (showToast = true) => {
     setIsSaving(true)
     try {
+      const currentConfig = configRef.current
       const newConfig: TunnelConfig = {
-        id: config?.id || crypto.randomUUID(),
+        id: currentConfig?.id || crypto.randomUUID(),
         instance_id: instanceId,
         provider,
         enabled,
         auto_start: autoStart,
-        playit_secret_key: config?.playit_secret_key || null,
+        playit_secret_key: currentConfig?.playit_secret_key || null,
         ngrok_authtoken: ngrokAuthtoken || null,
         target_port: targetPort,
-        tunnel_url: config?.tunnel_url || null,
+        tunnel_url: currentConfig?.tunnel_url || null,
       }
 
       await invoke("save_tunnel_config", { config: newConfig })
       setConfig(newConfig)
-      toast.success(t("tunnel.configSaved"))
+      if (showToast) {
+        toast.success(t("tunnel.configSaved"))
+      }
     } catch (err) {
       console.error("Failed to save tunnel config:", err)
       toast.error(`${t("tunnel.saveError")}: ${err}`)
     } finally {
       setIsSaving(false)
     }
-  }
+  }, [instanceId, provider, enabled, autoStart, ngrokAuthtoken, targetPort, t])
+
+  // Auto-save when settings change (with debounce)
+  const isInitialLoadDone = useRef(false)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Mark initial load as done after loading completes
+  useEffect(() => {
+    if (!isLoading && !isInitialLoadDone.current) {
+      // Wait a tick to ensure state is settled
+      setTimeout(() => {
+        isInitialLoadDone.current = true
+      }, 100)
+    }
+  }, [isLoading])
+
+  useEffect(() => {
+    // Skip auto-save before initial load is complete
+    if (!isInitialLoadDone.current) return
+
+    // Debounce save
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      saveConfig(false) // Save without toast
+    }, 500)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [provider, enabled, autoStart, targetPort, ngrokAuthtoken, saveConfig])
 
   const handleStartTunnel = async () => {
     // Save config first if needed
     if (!config || config.provider !== provider || config.target_port !== targetPort) {
-      await handleSave()
+      await saveConfig()
     }
 
     toast.loading(t("tunnel.tunnelStarting"), { id: "tunnel-start" })
@@ -275,6 +334,28 @@ export function TunnelConfig({ instanceId, serverPort, isServerRunning }: Tunnel
             <div className="flex items-center gap-2">
               <span className="text-green-500 font-medium">{t("tunnel.connected")}</span>
               <code className="bg-green-500/20 px-2 py-0.5 rounded text-green-400">
+                {tunnelStatus.url}
+              </code>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => copyToClipboard(tunnelStatus.url!)}
+              className="h-7 px-2"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {tunnelStatus.type === "disconnected" && tunnelStatus.url && (
+        <Alert className="border-muted-foreground/30 bg-muted/30">
+          <Globe className="h-4 w-4 text-muted-foreground" />
+          <AlertDescription className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground font-medium">{t("tunnel.lastKnownUrl")}</span>
+              <code className="bg-muted px-2 py-0.5 rounded text-muted-foreground">
                 {tunnelStatus.url}
               </code>
             </div>
@@ -488,33 +569,32 @@ export function TunnelConfig({ instanceId, serverPort, isServerRunning }: Tunnel
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2 pt-4">
-            <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {t("tunnel.save")}
-            </Button>
-
-            {enabled && isCurrentAgentInstalled && (
-              <>
-                {isTunnelRunning ? (
-                  <Button variant="destructive" onClick={handleStopTunnel} className="gap-2">
-                    <Square className="h-4 w-4" />
-                    {t("tunnel.stopTunnel")}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={handleStartTunnel}
-                    disabled={!isServerRunning}
-                    className="gap-2"
-                  >
-                    <Play className="h-4 w-4" />
-                    {t("tunnel.startTunnel")}
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
+          {enabled && isCurrentAgentInstalled && (
+            <div className="flex items-center gap-2 pt-4">
+              {isTunnelRunning ? (
+                <Button variant="destructive" onClick={handleStopTunnel} className="gap-2">
+                  <Square className="h-4 w-4" />
+                  {t("tunnel.stopTunnel")}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={handleStartTunnel}
+                  disabled={!isServerRunning}
+                  className="gap-2"
+                >
+                  <Play className="h-4 w-4" />
+                  {t("tunnel.startTunnel")}
+                </Button>
+              )}
+              {isSaving && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t("common.saving")}
+                </span>
+              )}
+            </div>
+          )}
 
           {enabled && !isServerRunning && !isTunnelRunning && (
             <p className="text-xs text-muted-foreground">

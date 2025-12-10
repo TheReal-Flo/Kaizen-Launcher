@@ -108,20 +108,22 @@ export function Home() {
         setInstanceIcons({ ...icons })
       }
 
-      // Select the most recently played instance
-      if (instancesResult.length > 0 && !selectedInstance) {
+      // Select the most recently played instance (only if none selected)
+      setSelectedInstance(prev => {
+        if (prev) return prev // Keep current selection
+        if (instancesResult.length === 0) return null
         const sorted = [...instancesResult].sort((a, b) => {
           if (!a.last_played) return 1
           if (!b.last_played) return -1
           return new Date(b.last_played).getTime() - new Date(a.last_played).getTime()
         })
-        setSelectedInstance(sorted[0])
-      }
+        return sorted[0]
+      })
     } catch (err) {
       console.error("Failed to load data:", err)
       toast.error(t("home.unableToLoadData"))
     }
-  }, [selectedInstance])
+  }, [t])
 
   useEffect(() => {
     loadData()

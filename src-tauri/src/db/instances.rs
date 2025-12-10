@@ -40,6 +40,8 @@ pub struct CreateInstance {
     pub is_server: bool,
     #[serde(default)]
     pub is_proxy: bool,
+    #[serde(default = "default_server_port")]
+    pub server_port: i64,
     pub modrinth_project_id: Option<String>,
 }
 
@@ -89,8 +91,8 @@ impl Instance {
 
         sqlx::query(
             r#"
-            INSERT INTO instances (id, name, mc_version, loader, loader_version, game_dir, is_server, is_proxy, modrinth_project_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO instances (id, name, mc_version, loader, loader_version, game_dir, is_server, is_proxy, server_port, modrinth_project_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(&id)
@@ -101,6 +103,7 @@ impl Instance {
         .bind(&game_dir)
         .bind(data.is_server)
         .bind(data.is_proxy)
+        .bind(data.server_port)
         .bind(&data.modrinth_project_id)
         .execute(db)
         .await?;

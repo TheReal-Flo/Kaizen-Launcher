@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useTranslation } from "@/i18n"
 import { Wrench, Terminal, Server, Globe } from "lucide-react"
 
@@ -190,6 +191,9 @@ export function InstanceDetails() {
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false)
   const [updatingMods, setUpdatingMods] = useState<Set<string>>(new Set())
   const [modsPage, setModsPage] = useState(1)
+  const [modSearchQuery, setModSearchQuery] = useState("")
+  const [selectedMods, setSelectedMods] = useState<Set<string>>(new Set())
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false)
 
   // Settings form state
   const [name, setName] = useState("")
@@ -353,18 +357,88 @@ export function InstanceDetails() {
     }
   }, [handleUpdateMod])
 
+  // Toggle mod selection
+  const toggleModSelection = useCallback((filename: string) => {
+    setSelectedMods(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(filename)) {
+        newSet.delete(filename)
+      } else {
+        newSet.add(filename)
+      }
+      return newSet
+    })
+  }, [])
+
+  // Deselect all mods
+  const deselectAllMods = useCallback(() => {
+    setSelectedMods(new Set())
+  }, [])
+
   // Check if a mod has an update available - memoized
   const getModUpdate = useCallback((mod: ModInfo): ModUpdateInfo | undefined => {
     if (!mod.project_id) return undefined
     return modUpdates.find(u => u.project_id === mod.project_id)
   }, [modUpdates])
 
+  // Filter mods by search query
+  const filteredMods = useMemo(() => {
+    if (!modSearchQuery.trim()) return mods
+    const query = modSearchQuery.toLowerCase()
+    return mods.filter(mod =>
+      mod.name.toLowerCase().includes(query) ||
+      mod.filename.toLowerCase().includes(query)
+    )
+  }, [mods, modSearchQuery])
+
   // Pagination for mods - memoized
-  const totalModsPages = useMemo(() => Math.ceil(mods.length / MODS_PER_PAGE), [mods.length])
+  const totalModsPages = useMemo(() => Math.ceil(filteredMods.length / MODS_PER_PAGE), [filteredMods.length])
   const paginatedMods = useMemo(() => {
     const start = (modsPage - 1) * MODS_PER_PAGE
-    return mods.slice(start, start + MODS_PER_PAGE)
-  }, [mods, modsPage])
+    return filteredMods.slice(start, start + MODS_PER_PAGE)
+  }, [filteredMods, modsPage])
+
+  // Select all filtered mods (defined after filteredMods)
+  const selectAllMods = useCallback(() => {
+    setSelectedMods(new Set(filteredMods.map(m => m.filename)))
+  }, [filteredMods])
+
+  // Delete selected mods
+  const handleDeleteSelectedMods = useCallback(async () => {
+    if (!instanceId || selectedMods.size === 0) return
+    setIsDeletingSelected(true)
+    try {
+      let deleted = 0
+      for (const filename of selectedMods) {
+        await invoke("delete_mod", { instanceId, filename })
+        deleted++
+      }
+      toast.success(t("instanceDetails.modsDeleted", { count: String(deleted) }))
+      setSelectedMods(new Set())
+      loadMods()
+    } catch (err) {
+      toast.error(t("instanceDetails.modDeleteError"))
+      console.error("Failed to delete mods:", err)
+    } finally {
+      setIsDeletingSelected(false)
+    }
+  }, [instanceId, selectedMods, loadMods, t])
+
+  // Update selected mods (only those with updates available)
+  const handleUpdateSelectedMods = useCallback(async () => {
+    const selectedUpdates = modUpdates.filter(u => {
+      const mod = mods.find(m => m.project_id === u.project_id)
+      return mod && selectedMods.has(mod.filename)
+    })
+    if (selectedUpdates.length === 0) {
+      toast.info(t("instanceDetails.noUpdatesForSelected"))
+      return
+    }
+    for (const update of selectedUpdates) {
+      await handleUpdateMod(update)
+    }
+    setSelectedMods(new Set())
+  }, [modUpdates, mods, selectedMods, handleUpdateMod, t])
 
   // Callback when content is changed - memoized
   const handleContentChanged = useCallback(() => {
@@ -617,6 +691,23 @@ export function InstanceDetails() {
     return counts
   }, [logContent])
 
+  // Load saved tunnel URL
+  const loadTunnelUrl = useCallback(async () => {
+    if (!instanceId) return
+    try {
+      const config = await invoke<{ tunnel_url: string | null } | null>("get_tunnel_config", { instanceId })
+      console.log("Loaded tunnel config:", config, "tunnel_url:", config?.tunnel_url)
+      if (config?.tunnel_url) {
+        console.log("Setting tunnel URL:", config.tunnel_url)
+        setTunnelUrl(config.tunnel_url)
+      } else {
+        console.log("No tunnel_url in config")
+      }
+    } catch (err) {
+      console.error("Failed to load tunnel config:", err)
+    }
+  }, [instanceId])
+
   useEffect(() => {
     // Batch all initial API calls in parallel for better performance
     Promise.all([
@@ -626,6 +717,7 @@ export function InstanceDetails() {
       loadActiveAccount(),
       loadIcon(),
       loadMods(),
+      loadTunnelUrl(),
     ]).catch(console.error)
 
     // Listen for instance status events
@@ -655,7 +747,7 @@ export function InstanceDetails() {
             setLaunchStep(null) // Clear launch step when status changes
             if (!running) {
               setLaunchError(null)
-              setTunnelUrl(null) // Clear tunnel URL when server stops
+              // Keep tunnel URL for reference (last known address)
             }
           }
         }
@@ -664,20 +756,31 @@ export function InstanceDetails() {
       // Listen for tunnel URL events
       unlistenTunnelUrl = await listen<{ instance_id: string; url: string }>(
         "tunnel-url",
-        (event) => {
+        async (event) => {
           if (event.payload.instance_id === instanceId) {
             setTunnelUrl(event.payload.url)
+            // Save URL to database for persistence
+            try {
+              await invoke("save_tunnel_url", {
+                instanceId,
+                url: event.payload.url
+              })
+              console.log("Tunnel URL saved from InstanceDetails:", event.payload.url)
+            } catch (err) {
+              console.error("Failed to save tunnel URL:", err)
+            }
           }
         }
       )
 
-      // Listen for tunnel status events to clear URL when disconnected
-      unlistenTunnelStatus = await listen<{ instance_id: string; status: { type: string } }>(
+      // Listen for tunnel status events to update URL when connected
+      unlistenTunnelStatus = await listen<{ instance_id: string; status: { type: string; url?: string } }>(
         "tunnel-status",
         (event) => {
           if (event.payload.instance_id === instanceId) {
-            if (event.payload.status.type === "disconnected") {
-              setTunnelUrl(null)
+            // Update URL when tunnel connects (keep last known URL when disconnected)
+            if (event.payload.status.type === "connected" && event.payload.status.url) {
+              setTunnelUrl(event.payload.status.url)
             }
           }
         }
@@ -921,7 +1024,7 @@ export function InstanceDetails() {
                   ) : (
                     <Play className="h-5 w-5" />
                   )}
-                  {instance?.is_server || instance?.is_proxy ? t("server.tunnelStart") : t("instances.play")}
+                  {instance?.is_proxy ? t("server.startProxy") : instance?.is_server ? t("server.start") : t("instances.play")}
                 </>
               ) : (
                 <>
@@ -1324,6 +1427,77 @@ export function InstanceDetails() {
               </div>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col min-h-0 pt-0">
+              {/* Search bar and batch actions for mods */}
+              {mods.length > 0 && (
+                <div className="space-y-3 mb-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder={t("instanceDetails.searchMods")}
+                      value={modSearchQuery}
+                      onChange={(e) => {
+                        setModSearchQuery(e.target.value)
+                        setModsPage(1) // Reset to first page when searching
+                      }}
+                      className="pl-9"
+                    />
+                  </div>
+                  {/* Batch actions bar */}
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="select-all-mods"
+                        checked={selectedMods.size > 0 && selectedMods.size === filteredMods.length}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            selectAllMods()
+                          } else {
+                            deselectAllMods()
+                          }
+                        }}
+                      />
+                      <label htmlFor="select-all-mods" className="text-muted-foreground cursor-pointer">
+                        {selectedMods.size > 0
+                          ? t("instanceDetails.selectedCount", { count: String(selectedMods.size) })
+                          : t("instanceDetails.selectAll")}
+                      </label>
+                    </div>
+                    {selectedMods.size > 0 && (
+                      <div className="flex items-center gap-2 ml-auto">
+                        {modUpdates.some(u => {
+                          const mod = mods.find(m => m.project_id === u.project_id)
+                          return mod && selectedMods.has(mod.filename)
+                        }) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleUpdateSelectedMods}
+                            disabled={updatingMods.size > 0}
+                            className="gap-1 h-7 text-xs"
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                            {t("instanceDetails.updateSelected")}
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleDeleteSelectedMods}
+                          disabled={isDeletingSelected}
+                          className="gap-1 h-7 text-xs text-destructive hover:text-destructive"
+                        >
+                          {isDeletingSelected ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
+                          {t("instanceDetails.deleteSelected")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               {isLoadingMods ? (
                 <div className="flex items-center justify-center py-8 flex-1">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1333,6 +1507,11 @@ export function InstanceDetails() {
                   <Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground mb-2">{t("instanceDetails.noModInstalled")}</p>
                   <p className="text-sm text-muted-foreground">{t("instanceDetails.useModrinth")}</p>
+                </div>
+              ) : filteredMods.length === 0 ? (
+                <div className="text-center py-8 flex-1 flex flex-col items-center justify-center">
+                  <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">{t("instances.noResults")}</p>
                 </div>
               ) : (
                 <div className="flex flex-col flex-1 min-h-0">
@@ -1347,8 +1526,15 @@ export function InstanceDetails() {
                             key={mod.filename}
                             className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
                               !mod.enabled ? "opacity-50 bg-muted/30" : ""
-                            } ${update ? "border-green-500/50 bg-green-500/5" : ""}`}
+                            } ${update ? "border-green-500/50 bg-green-500/5" : ""} ${
+                              selectedMods.has(mod.filename) ? "bg-accent/50 border-primary/50" : ""
+                            }`}
                           >
+                            <Checkbox
+                              checked={selectedMods.has(mod.filename)}
+                              onCheckedChange={() => toggleModSelection(mod.filename)}
+                              className="flex-shrink-0"
+                            />
                             {mod.icon_url ? (
                               <img
                                 src={mod.icon_url}

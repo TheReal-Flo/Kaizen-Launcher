@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, Copy, Check } from "lucide-react"
 import { useTranslation } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import {
@@ -28,13 +28,21 @@ export function DeleteInstanceDialog({
 }: DeleteInstanceDialogProps) {
   const { t } = useTranslation()
   const [confirmText, setConfirmText] = useState("")
+  const [copied, setCopied] = useState(false)
   const confirmPhrase = instanceName
 
   useEffect(() => {
     if (!open) {
       setConfirmText("")
+      setCopied(false)
     }
   }, [open])
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(confirmPhrase)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const isConfirmValid = confirmText === confirmPhrase
 
@@ -70,9 +78,23 @@ export function DeleteInstanceDialog({
             <p className="text-sm text-destructive font-medium">
               {t("dialogs.deleteInstance.typeToConfirm")}
             </p>
-            <p className="text-sm font-mono bg-background/50 px-2 py-1 rounded mt-2 select-all">
-              {confirmPhrase}
-            </p>
+            <div className="flex items-center gap-2 mt-2">
+              <p className="text-sm font-mono bg-background/50 px-2 py-1 rounded flex-1 select-all">
+                {confirmPhrase}
+              </p>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={handleCopy}
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-green-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2">
