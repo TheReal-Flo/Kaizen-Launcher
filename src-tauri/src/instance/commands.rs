@@ -537,8 +537,13 @@ pub async fn get_instance_datapacks(
         .join(&instance.game_dir);
 
     // Find world folder for datapacks
-    let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
-    let datapacks_dir = instance_dir.join("saves").join(&world_name).join("datapacks");
+    let world_name = find_world_folder(&instance_dir)
+        .await
+        .unwrap_or_else(|| "world".to_string());
+    let datapacks_dir = instance_dir
+        .join("saves")
+        .join(&world_name)
+        .join("datapacks");
 
     if !datapacks_dir.exists() {
         return Ok(vec![]);
@@ -627,9 +632,9 @@ async fn get_instance_content(
 
     if !content_dir.exists() {
         // Create the directory if it doesn't exist
-        fs::create_dir_all(&content_dir).await.map_err(|e| {
-            AppError::Io(format!("Failed to create {} directory: {}", folder, e))
-        })?;
+        fs::create_dir_all(&content_dir)
+            .await
+            .map_err(|e| AppError::Io(format!("Failed to create {} directory: {}", folder, e)))?;
         return Ok(vec![]);
     }
 

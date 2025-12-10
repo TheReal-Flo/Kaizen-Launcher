@@ -1,7 +1,7 @@
-use serde::Serialize;
-use sysinfo::{Pid, System};
-use std::sync::Mutex;
 use once_cell::sync::Lazy;
+use serde::Serialize;
+use std::sync::Mutex;
+use sysinfo::{Pid, System};
 
 use crate::error::AppResult;
 
@@ -43,22 +43,23 @@ pub async fn get_app_metrics() -> AppResult<AppMetrics> {
 
     let pid = Pid::from_u32(std::process::id());
 
-    let (cpu_usage, memory_bytes, thread_count, uptime_secs) = if let Some(process) = sys.process(pid) {
-        (
-            process.cpu_usage(),
-            process.memory(),
-            // sysinfo doesn't provide thread count directly on all platforms
-            // We'll use a workaround
-            get_thread_count(),
-            process.run_time(),
-        )
-    } else {
-        (0.0, 0, 0, 0)
-    };
+    let (cpu_usage, memory_bytes, thread_count, uptime_secs) =
+        if let Some(process) = sys.process(pid) {
+            (
+                process.cpu_usage(),
+                process.memory(),
+                // sysinfo doesn't provide thread count directly on all platforms
+                // We'll use a workaround
+                get_thread_count(),
+                process.run_time(),
+            )
+        } else {
+            (0.0, 0, 0, 0)
+        };
 
     // Calculate system CPU usage (average of all CPUs)
-    let system_cpu_usage = sys.cpus().iter().map(|cpu| cpu.cpu_usage()).sum::<f32>()
-        / sys.cpus().len() as f32;
+    let system_cpu_usage =
+        sys.cpus().iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / sys.cpus().len() as f32;
 
     Ok(AppMetrics {
         cpu_usage,
@@ -88,7 +89,8 @@ fn get_thread_count() -> usize {
                     libc::vm_deallocate(
                         task,
                         thread_list as libc::vm_address_t,
-                        (thread_count as usize * std::mem::size_of::<libc::thread_act_t>()) as libc::vm_size_t,
+                        (thread_count as usize * std::mem::size_of::<libc::thread_act_t>())
+                            as libc::vm_size_t,
                     );
                 }
                 return thread_count as usize;

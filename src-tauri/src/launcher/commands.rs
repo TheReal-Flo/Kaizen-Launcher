@@ -194,7 +194,8 @@ async fn install_server_instance(
     // Emit progress
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 10,
             total: 100,
@@ -336,7 +337,8 @@ async fn install_server_instance(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 100,
             total: 100,
@@ -360,7 +362,8 @@ async fn install_vanilla_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 20,
             total: 100,
@@ -384,7 +387,8 @@ async fn install_vanilla_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 40,
             total: 100,
@@ -436,7 +440,8 @@ async fn install_fabric_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -499,7 +504,8 @@ async fn install_forge_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 20,
             total: 100,
@@ -540,7 +546,8 @@ async fn install_forge_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 50,
             total: 100,
@@ -704,7 +711,8 @@ async fn install_neoforge_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 20,
             total: 100,
@@ -744,7 +752,8 @@ async fn install_neoforge_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 50,
             total: 100,
@@ -889,7 +898,8 @@ async fn install_paper_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -974,7 +984,8 @@ async fn install_velocity_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -1066,7 +1077,8 @@ async fn install_waterfall_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -1156,7 +1168,8 @@ async fn install_bungeecord_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -1244,7 +1257,8 @@ async fn install_purpur_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -1307,7 +1321,8 @@ async fn install_folia_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -1388,7 +1403,8 @@ async fn install_pufferfish_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,
@@ -1461,7 +1477,8 @@ async fn install_sponge_server(
 
     let _ = app.emit(
         "install-progress",
-        installer::InstallProgress { instance_id: None,
+        installer::InstallProgress {
+            instance_id: None,
             stage: "server".to_string(),
             current: 30,
             total: 100,

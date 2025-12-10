@@ -7,7 +7,11 @@ use tauri::State;
 use super::{build_facets, ModrinthClient, SearchHit, SearchQuery, Version, VersionFile};
 
 /// Determine the content folder name based on project type and loader
-fn get_content_folder(project_type: Option<&str>, loader: Option<&str>, is_server: bool) -> &'static str {
+fn get_content_folder(
+    project_type: Option<&str>,
+    loader: Option<&str>,
+    is_server: bool,
+) -> &'static str {
     match project_type {
         // Resource packs go to resourcepacks/ folder
         Some("resourcepack") => "resourcepacks",
@@ -335,8 +339,13 @@ pub async fn install_modrinth_mod(
     // Handle datapacks specially - they go into saves/<world>/datapacks/
     let target_dir = if ptype == Some("datapack") {
         // Find existing world folder or use default "world"
-        let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
-        instance_dir.join("saves").join(&world_name).join("datapacks")
+        let world_name = find_world_folder(&instance_dir)
+            .await
+            .unwrap_or_else(|| "world".to_string());
+        instance_dir
+            .join("saves")
+            .join(&world_name)
+            .join("datapacks")
     } else {
         instance_dir.join(folder_name)
     };
@@ -364,7 +373,8 @@ pub async fn install_modrinth_mod(
 
     // Save metadata file with icon_url
     // Strip appropriate extension based on file type
-    let base_filename = file.filename
+    let base_filename = file
+        .filename
         .trim_end_matches(".jar")
         .trim_end_matches(".zip");
     let meta_filename = format!("{}.meta.json", base_filename);
@@ -386,7 +396,13 @@ pub async fn install_modrinth_mod(
         Some("shader") => "shader",
         Some("datapack") => "datapack",
         Some("plugin") => "plugin",
-        _ => if folder_name == "plugins" { "plugin" } else { "mod" },
+        _ => {
+            if folder_name == "plugins" {
+                "plugin"
+            } else {
+                "mod"
+            }
+        }
     };
 
     log::info!(
@@ -425,8 +441,13 @@ pub async fn get_installed_mod_ids(
 
     // Handle datapacks specially
     let content_dir = if ptype == Some("datapack") {
-        let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
-        instance_dir.join("saves").join(&world_name).join("datapacks")
+        let world_name = find_world_folder(&instance_dir)
+            .await
+            .unwrap_or_else(|| "world".to_string());
+        instance_dir
+            .join("saves")
+            .join(&world_name)
+            .join("datapacks")
     } else {
         instance_dir.join(folder_name)
     };
@@ -575,8 +596,13 @@ pub async fn install_modrinth_mods_batch(
 
     // Handle datapacks specially
     let target_dir = if ptype == Some("datapack") {
-        let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
-        instance_dir.join("saves").join(&world_name).join("datapacks")
+        let world_name = find_world_folder(&instance_dir)
+            .await
+            .unwrap_or_else(|| "world".to_string());
+        instance_dir
+            .join("saves")
+            .join(&world_name)
+            .join("datapacks")
     } else {
         instance_dir.join(folder_name)
     };
@@ -1286,8 +1312,13 @@ pub async fn check_mod_updates(
 
     // Handle datapacks specially
     let content_dir = if ptype == Some("datapack") {
-        let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
-        instance_dir.join("saves").join(&world_name).join("datapacks")
+        let world_name = find_world_folder(&instance_dir)
+            .await
+            .unwrap_or_else(|| "world".to_string());
+        instance_dir
+            .join("saves")
+            .join(&world_name)
+            .join("datapacks")
     } else {
         instance_dir.join(folder_name)
     };
@@ -1325,9 +1356,15 @@ pub async fn check_mod_updates(
                         jar_filename
                     } else if content_dir.join(&zip_filename).exists() {
                         zip_filename
-                    } else if content_dir.join(format!("{}.jar.disabled", base_name)).exists() {
+                    } else if content_dir
+                        .join(format!("{}.jar.disabled", base_name))
+                        .exists()
+                    {
                         format!("{}.jar.disabled", base_name)
-                    } else if content_dir.join(format!("{}.zip.disabled", base_name)).exists() {
+                    } else if content_dir
+                        .join(format!("{}.zip.disabled", base_name))
+                        .exists()
+                    {
                         format!("{}.zip.disabled", base_name)
                     } else {
                         continue;
@@ -1351,10 +1388,16 @@ pub async fn check_mod_updates(
             }
             _ => None,
         };
-        let loaders_refs: Option<Vec<&str>> = loaders.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+        let loaders_refs: Option<Vec<&str>> = loaders
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
 
         match client
-            .get_project_versions(&meta.project_id, loaders_refs.as_deref(), game_versions.as_deref())
+            .get_project_versions(
+                &meta.project_id,
+                loaders_refs.as_deref(),
+                game_versions.as_deref(),
+            )
             .await
         {
             Ok(versions) => {
@@ -1416,8 +1459,13 @@ pub async fn update_mod(
 
     // Handle datapacks specially
     let content_dir = if ptype == Some("datapack") {
-        let world_name = find_world_folder(&instance_dir).await.unwrap_or_else(|| "world".to_string());
-        instance_dir.join("saves").join(&world_name).join("datapacks")
+        let world_name = find_world_folder(&instance_dir)
+            .await
+            .unwrap_or_else(|| "world".to_string());
+        instance_dir
+            .join("saves")
+            .join(&world_name)
+            .join("datapacks")
     } else {
         instance_dir.join(folder_name)
     };
@@ -1469,7 +1517,8 @@ pub async fn update_mod(
     }
 
     // Save new metadata
-    let new_base = file.filename
+    let new_base = file
+        .filename
         .trim_end_matches(".jar")
         .trim_end_matches(".zip");
     let new_meta_path = content_dir.join(format!("{}.meta.json", new_base));
