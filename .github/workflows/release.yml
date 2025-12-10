@@ -91,70 +91,78 @@ jobs:
           echo "npm version: $(npm --version)"
         shell: bash
 
-      # Install Rust - manual installation to avoid bash dependency on Windows
-      - name: Install Rust (Unix)
-        if: runner.os != 'Windows'
+      # Self-hosted: just verify Rust and add target (no update/download)
+      - name: Verify Rust (Self-hosted Unix)
+        if: github.event.inputs.use_self_hosted == 'true' && runner.os != 'Windows'
         run: |
-          # Check multiple locations where Rust might be installed
-          # Docker containers use /usr/local/cargo, regular installs use $HOME/.cargo
+          # Find rustup location
           if [ -f "/usr/local/cargo/bin/rustup" ]; then
-            echo "Rust found in /usr/local/cargo (Docker), updating..."
-            /usr/local/cargo/bin/rustup update stable
-            /usr/local/cargo/bin/rustup default stable
             echo "/usr/local/cargo/bin" >> $GITHUB_PATH
-            /usr/local/cargo/bin/rustup target add ${{ matrix.target }}
+            RUSTUP="/usr/local/cargo/bin/rustup"
           elif [ -f "$HOME/.cargo/bin/rustup" ]; then
-            echo "Rust found in $HOME/.cargo, updating..."
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+            RUSTUP="$HOME/.cargo/bin/rustup"
+          else
+            RUSTUP="rustup"
+          fi
+          echo "Rust version: $($RUSTUP --version)"
+          $RUSTUP target add ${{ matrix.target }} 2>/dev/null || true
+
+      - name: Verify Rust (Self-hosted Windows)
+        if: github.event.inputs.use_self_hosted == 'true' && runner.os == 'Windows'
+        run: |
+          $rustupPath = "$env:USERPROFILE\.cargo\bin\rustup.exe"
+          Write-Host "Rust version:"
+          & $rustupPath --version
+          & $rustupPath target add ${{ matrix.target }}
+          echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: powershell
+
+      # GitHub-hosted: full Rust setup with updates
+      - name: Install Rust (GitHub-hosted Unix)
+        if: github.event.inputs.use_self_hosted != 'true' && runner.os != 'Windows'
+        run: |
+          if [ -f "$HOME/.cargo/bin/rustup" ]; then
             "$HOME/.cargo/bin/rustup" update stable
             "$HOME/.cargo/bin/rustup" default stable
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
             "$HOME/.cargo/bin/rustup" target add ${{ matrix.target }}
           elif command -v rustup >/dev/null 2>&1; then
-            echo "Rust already in PATH, updating..."
             rustup update stable
             rustup default stable
             rustup target add ${{ matrix.target }}
           else
-            echo "Installing Rust..."
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
             "$HOME/.cargo/bin/rustup" target add ${{ matrix.target }}
           fi
-          # Verify installation
-          echo "Rust version:"
-          rustup --version || /usr/local/cargo/bin/rustup --version || $HOME/.cargo/bin/rustup --version
+          rustup --version || $HOME/.cargo/bin/rustup --version
 
-      - name: Install Rust (Windows)
-        if: runner.os == 'Windows'
+      - name: Install Rust (GitHub-hosted Windows)
+        if: github.event.inputs.use_self_hosted != 'true' && runner.os == 'Windows'
         run: |
-          # Check if rustup is already installed
           $rustupPath = "$env:USERPROFILE\.cargo\bin\rustup.exe"
           if (Test-Path $rustupPath) {
-            Write-Host "Rust already installed, updating..."
             & $rustupPath update stable
             & $rustupPath default stable
           } else {
-            # Download and install rustup
-            Write-Host "Installing Rust..."
             $rustupInit = "$env:TEMP\rustup-init.exe"
             Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupInit
             & $rustupInit -y --default-toolchain stable
-            # Add to PATH for this session
             $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
           }
-          # Add target
           & "$env:USERPROFILE\.cargo\bin\rustup.exe" target add ${{ matrix.target }}
-          # Output cargo/rustc versions
           & "$env:USERPROFILE\.cargo\bin\cargo.exe" --version
-          & "$env:USERPROFILE\.cargo\bin\rustc.exe" --version
         shell: powershell
 
-      - name: Add Rust to PATH (Windows)
-        if: runner.os == 'Windows'
+      - name: Add Rust to PATH (GitHub-hosted Windows)
+        if: github.event.inputs.use_self_hosted != 'true' && runner.os == 'Windows'
         run: echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         shell: powershell
 
+      # Cache Rust only for GitHub-hosted runners (self-hosted has persistent cache)
       - name: Cache Rust
+        if: github.event.inputs.use_self_hosted != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
