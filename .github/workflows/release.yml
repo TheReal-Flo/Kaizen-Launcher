@@ -4,9 +4,23 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      use_self_hosted:
+        description: 'Use self-hosted runners (faster)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write
+
+env:
+  CARGO_INCREMENTAL: 1
+  CARGO_NET_RETRY: 10
 
 jobs:
   create-release:
@@ -27,7 +41,7 @@ jobs:
               repo: context.repo.repo,
               tag_name: `${context.ref.replace('refs/tags/', '')}`,
               name: `Kaizen Launcher ${context.ref.replace('refs/tags/', '')}`,
-              body: 'See the assets for download links.',
+              body: 'See the assets for download links and CHANGELOG.md for details.',
               draft: true,
               prerelease: false
             })
@@ -40,16 +54,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux - GitHub hosted or self-hosted
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            self_hosted_label: linux-x64
+          # macOS ARM - GitHub hosted or self-hosted Mac
           - platform: macos-latest
             target: aarch64-apple-darwin
+            self_hosted_label: macos-arm64
+          # macOS x86 (cross-compile on ARM)
           - platform: macos-latest
             target: x86_64-apple-darwin
+            self_hosted_label: macos-arm64
+          # Windows - GitHub hosted or self-hosted
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
+            self_hosted_label: windows-x64
 
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ github.event.inputs.use_self_hosted == 'true' && matrix.self_hosted_label || matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,30 +86,21 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust dependencies
+      - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
+          shared-key: release-${{ matrix.target }}
 
       - name: Install dependencies (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: contains(matrix.platform, 'ubuntu') || contains(matrix.self_hosted_label, 'linux')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: Install npm dependencies (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install
-
-      - name: Install npm dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          if (Test-Path node_modules) { Remove-Item -Recurse -Force node_modules }
-          if (Test-Path package-lock.json) { Remove-Item -Force package-lock.json }
-          npm install
-        shell: pwsh
+      - name: Install npm dependencies
+        run: npm ci --prefer-offline
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.5

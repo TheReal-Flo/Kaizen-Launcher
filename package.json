@@ -19,7 +19,14 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build:local": "./scripts/build-local.sh",
+    "build:macos": "./scripts/build-local.sh macos",
+    "build:macos-arm": "./scripts/build-local.sh macos-arm",
+    "build:macos-x86": "./scripts/build-local.sh macos-x86",
+    "build:linux": "./scripts/build-local.sh linux",
+    "build:windows": "./scripts/build-local.sh windows",
+    "build:release": "npm run tauri build"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
