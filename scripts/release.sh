@@ -78,6 +78,10 @@ SPECIFIC_VERSION=""
 SIGNING_KEY_FILE=""
 SIGNING_KEY_PASSWORD=""
 
+# Git options
+AUTO_COMMIT=false
+STASHED_CHANGES=false
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -530,12 +534,70 @@ check_git_status() {
         git status --short
         echo ""
 
-        if [ "$DRY_RUN" = false ]; then
-            read -p "Continue anyway? [y/N] " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                exit 1
-            fi
+        if [ "$DRY_RUN" = true ]; then
+            log_info "[DRY-RUN] Would handle uncommitted changes"
+        elif [ "$AUTO_COMMIT" = true ]; then
+            # Auto-commit mode
+            log_step "Auto-committing changes..."
+            git add -A
+            git commit -m "$(cat <<EOF
+chore: pre-release changes
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+            log_success "Changes auto-committed"
+        else
+            echo -e "${BOLD}What would you like to do?${NC}"
+            echo ""
+            echo -e "  ${BOLD}1)${NC} Commit changes now (recommended)"
+            echo -e "  ${BOLD}2)${NC} Stash changes and continue"
+            echo -e "  ${BOLD}3)${NC} Continue without committing"
+            echo -e "  ${BOLD}4)${NC} Cancel"
+            echo ""
+            read -p "Choice [1-4]: " choice
+
+            case $choice in
+                1)
+                    # Commit changes
+                    echo ""
+                    read -p "Enter commit message (or press Enter for default): " commit_msg
+                    if [ -z "$commit_msg" ]; then
+                        commit_msg="chore: pre-release changes"
+                    fi
+
+                    log_step "Adding all changes..."
+                    git add -A
+
+                    log_step "Committing..."
+                    git commit -m "$(cat <<EOF
+$commit_msg
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+                    log_success "Changes committed"
+                    ;;
+                2)
+                    # Stash changes
+                    log_step "Stashing changes..."
+                    git stash push -m "Pre-release stash $(date +%Y%m%d-%H%M%S)"
+                    log_success "Changes stashed (use 'git stash pop' to restore)"
+                    STASHED_CHANGES=true
+                    ;;
+                3)
+                    # Continue anyway
+                    log_warning "Continuing with uncommitted changes..."
+                    ;;
+                *)
+                    echo "Cancelled."
+                    exit 0
+                    ;;
+            esac
         fi
     else
         log_success "Working directory clean"
@@ -1041,6 +1103,10 @@ parse_arguments() {
                 generate_signing_keys
                 exit 0
                 ;;
+            --auto-commit)
+                AUTO_COMMIT=true
+                shift
+                ;;
             --help|-h)
                 show_help
                 exit 0
@@ -1080,6 +1146,9 @@ Signing Options:
   --signing-key FILE    Path to Tauri signing private key file
   --signing-password PW Password for the signing key
   --generate-keys       Generate new signing keys and exit
+
+Git Options:
+  --auto-commit         Automatically commit uncommitted changes
 
 Release Options:
   --draft               Create release as draft

@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-release/
+dist-docker/
+dist-builds/
+
+# Tauri build cache
+src-tauri/target/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files (but allow .env.local.example)
+.env
+.env.local
+.tauri-signing-keys
+
+# Documentation (not needed for build)
+docs/
+*.md
+!README.md
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__/
+coverage/
+
+# Keep docker/ folder but ignore compose cache
+.docker/

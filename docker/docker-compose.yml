@@ -1,11 +1,12 @@
-version: '3.8'
-
 services:
-  # Linux build
+  # Linux x86_64 build (runs in emulation on Apple Silicon)
   build-linux:
+    platform: linux/amd64
     build:
       context: ..
       dockerfile: docker/Dockerfile.linux
+      platforms:
+        - linux/amd64
       args:
         TAURI_SIGNING_PRIVATE_KEY: ${TAURI_SIGNING_PRIVATE_KEY:-}
         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}
@@ -16,11 +17,14 @@ services:
     environment:
       - CARGO_INCREMENTAL=1
 
-  # Windows build (cross-compilation)
+  # Windows x86_64 build (cross-compilation from Linux)
   build-windows:
+    platform: linux/amd64
     build:
       context: ..
       dockerfile: docker/Dockerfile.windows
+      platforms:
+        - linux/amd64
       args:
         TAURI_SIGNING_PRIVATE_KEY: ${TAURI_SIGNING_PRIVATE_KEY:-}
         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}

@@ -1,12 +1,13 @@
-# Dockerfile for building Kaizen Launcher for Linux
+# Dockerfile for building Kaizen Launcher for Linux x86_64
 # Includes full Tauri bundling with signing support
-FROM ubuntu:22.04
+FROM --platform=linux/amd64 ubuntu:22.04
 
 # Avoid timezone prompts
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 # Install system dependencies for Tauri
+# Note: Using libayatana-appindicator3-dev (not libappindicator3-dev) to avoid conflicts
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -15,11 +16,10 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     libwebkit2gtk-4.1-dev \
-    libappindicator3-dev \
+    libayatana-appindicator3-dev \
     librsvg2-dev \
     patchelf \
     libgtk-3-dev \
-    libayatana-appindicator3-dev \
     squashfs-tools \
     file \
     && rm -rf /var/lib/apt/lists/*
