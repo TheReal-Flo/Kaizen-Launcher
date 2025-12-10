@@ -2,6 +2,23 @@
 
 All notable changes to Kaizen Launcher will be documented in this file.
 
+## [0.1.19] - 2025-12-10
+
+### Added
+- Docker-based cross-platform build system
+  - Dockerfile for Linux builds (Ubuntu 22.04, Node 20, Rust)
+  - Dockerfile for Windows cross-compilation using cargo-xwin
+  - docker-compose.yml with volume caching for faster rebuilds
+  - release-docker.sh script for building all platforms locally
+- npm scripts for Docker builds: `docker:build`, `docker:linux`, `docker:windows`, `docker:release`
+- Support for parallel builds with `--parallel` flag
+- GitHub release integration with `--push` flag
+
+### Technical
+- Added cargo-xwin for MSVC-compatible Windows cross-compilation from Linux
+- Docker volumes cache cargo registry and build targets for incremental builds
+- Optimized CI/CD workflows with better caching and concurrency
+
 ## [0.1.18] - 2025-12-10
 
 ### Added
