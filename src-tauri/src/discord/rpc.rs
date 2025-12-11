@@ -25,8 +25,7 @@ struct DiscordConnection {
 
 #[cfg(windows)]
 struct DiscordConnection {
-    // Windows named pipe handle would go here
-    _handle: (),
+    pipe: std::fs::File,
 }
 
 #[derive(Serialize)]
@@ -118,11 +117,57 @@ pub fn connect() -> AppResult<()> {
 
     #[cfg(windows)]
     {
-        // Windows implementation would use named pipes
-        // For now, mark as not supported
-        return Err(AppError::Discord(
-            "Windows Discord RPC not yet implemented".to_string(),
-        ));
+        use std::fs::OpenOptions;
+
+        // Find Discord IPC named pipe
+        let mut pipe_path = None;
+        for i in 0..10 {
+            let path = format!(r"\\.\pipe\discord-ipc-{}", i);
+            // Try to open the pipe to check if it exists
+            if let Ok(file) = OpenOptions::new().read(true).write(true).open(&path) {
+                pipe_path = Some((path, file));
+                break;
+            }
+        }
+
+        let (path, mut pipe) = pipe_path.ok_or_else(|| {
+            AppError::Discord("Discord IPC pipe not found. Is Discord running?".to_string())
+        })?;
+
+        debug!("Connecting to pipe: {}", path);
+
+        // Send handshake (opcode 0)
+        let handshake = json!({
+            "v": 1,
+            "client_id": DISCORD_APP_ID
+        });
+        let payload = serde_json::to_vec(&handshake)?;
+
+        let mut header = Vec::new();
+        header.extend_from_slice(&0u32.to_le_bytes()); // opcode 0 = handshake
+        header.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        pipe.write_all(&header)?;
+        pipe.write_all(&payload)?;
+
+        // Read handshake response
+        let mut response_header = [0u8; 8];
+        pipe.read_exact(&mut response_header)?;
+        let length = u32::from_le_bytes([
+            response_header[4],
+            response_header[5],
+            response_header[6],
+            response_header[7],
+        ]);
+
+        let mut response_data = vec![0u8; length as usize];
+        pipe.read_exact(&mut response_data)?;
+
+        if let Ok(response_str) = String::from_utf8(response_data) {
+            debug!("Handshake response: {}", response_str);
+        }
+
+        *conn_guard = Some(DiscordConnection { pipe });
+        debug!("Connected and handshake complete!");
     }
 
     Ok(())
@@ -300,9 +345,50 @@ fn send_activity_internal(
 
 #[cfg(windows)]
 fn send_activity_internal(
-    _conn: &mut DiscordConnection,
-    _activity: serde_json::Value,
+    conn: &mut DiscordConnection,
+    activity: serde_json::Value,
 ) -> AppResult<()> {
+    let payload = RpcPayload {
+        cmd: "SET_ACTIVITY".to_string(),
+        args: json!({
+            "pid": std::process::id(),
+            "activity": activity
+        }),
+        nonce: uuid::Uuid::new_v4().to_string(),
+    };
+
+    let payload_bytes = serde_json::to_vec(&payload)?;
+
+    let mut header = Vec::new();
+    header.extend_from_slice(&1u32.to_le_bytes()); // opcode 1 = frame
+    header.extend_from_slice(&(payload_bytes.len() as u32).to_le_bytes());
+
+    conn.pipe.write_all(&header)?;
+    conn.pipe.write_all(&payload_bytes)?;
+
+    // Read response
+    let mut response_header = [0u8; 8];
+    conn.pipe.read_exact(&mut response_header)?;
+    let opcode = u32::from_le_bytes([
+        response_header[0],
+        response_header[1],
+        response_header[2],
+        response_header[3],
+    ]);
+    let length = u32::from_le_bytes([
+        response_header[4],
+        response_header[5],
+        response_header[6],
+        response_header[7],
+    ]);
+
+    let mut response_data = vec![0u8; length as usize];
+    conn.pipe.read_exact(&mut response_data)?;
+
+    if let Ok(response_str) = String::from_utf8(response_data) {
+        debug!("Response (opcode {}): {}", opcode, response_str);
+    }
+
     Ok(())
 }
 
