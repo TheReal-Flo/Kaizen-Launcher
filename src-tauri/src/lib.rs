@@ -2,9 +2,9 @@ mod auth;
 pub mod cache;
 mod cloud_storage;
 pub mod crypto;
-mod discord;
 mod db;
 mod devtools;
+mod discord;
 mod download;
 mod error;
 mod instance;
@@ -175,6 +175,12 @@ pub fn run() {
             minecraft::commands::get_minecraft_versions,
             minecraft::commands::get_minecraft_version_details,
             minecraft::commands::refresh_minecraft_versions,
+            // Skin commands
+            minecraft::skins::upload_skin,
+            minecraft::skins::reset_skin,
+            minecraft::skins::change_skin_url,
+            minecraft::skins::get_minecraft_profile,
+            minecraft::skins::change_active_cape,
             // Launcher commands
             launcher::commands::install_instance,
             launcher::commands::launch_instance,

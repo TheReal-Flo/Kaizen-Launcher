@@ -10,6 +10,7 @@ import {
   Settings,
   Sparkles,
   Share2,
+  Palette,
   type LucideIcon
 } from "lucide-react"
 import { useTranslation } from "@/i18n"
@@ -183,6 +184,7 @@ export function Sidebar() {
           <NavItem to="/browse" icon={Search} label={t("nav.browse")} />
           <NavItem to="/backups" icon={Archive} label={t("nav.backups")} />
           <NavItemWithBadge to="/sharing" icon={Share2} label={t("nav.sharing")} badge={activeSeedsCount} exact />
+          <NavItem to="/skins" icon={Palette} label="Skins" />
         </nav>
 
         {/* Spacer */}

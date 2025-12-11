@@ -12,6 +12,15 @@ pub struct MinecraftProfile {
     pub id: String,
     pub name: String,
     pub skins: Vec<MinecraftSkin>,
+    pub capes: Vec<MinecraftCape>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MinecraftCape {
+    pub id: String,
+    pub state: String,
+    pub url: String,
+    pub alias: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +48,15 @@ struct MinecraftProfileResponse {
     id: String,
     name: String,
     skins: Option<Vec<SkinResponse>>,
+    capes: Option<Vec<CapeResponse>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CapeResponse {
+    id: String,
+    state: String,
+    url: String,
+    alias: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,9 +192,136 @@ pub async fn get_minecraft_profile(
         })
         .collect();
 
+    let capes = profile
+        .capes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| MinecraftCape {
+            id: c.id,
+            state: c.state,
+            url: c.url,
+            alias: c.alias,
+        })
+        .collect();
+
     Ok(MinecraftProfile {
         id: profile.id,
         name: profile.name,
         skins,
+        capes,
     })
+}
+
+pub async fn upload_skin(
+    client: &reqwest::Client,
+    minecraft_token: &str,
+    file_path: &std::path::Path,
+    variant: &str,
+) -> AppResult<()> {
+    let file_content = tokio::fs::read(file_path)
+        .await
+        .map_err(|e| AppError::Io(e.to_string()))?;
+
+    let part = reqwest::multipart::Part::bytes(file_content)
+        .file_name("skin.png")
+        .mime_str("image/png")
+        .map_err(|e| AppError::Auth(format!("Failed to create multipart: {}", e)))?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", part)
+        .text("variant", variant.to_string());
+
+    let response = client
+        .post("https://api.minecraftservices.com/minecraft/profile/skins")
+        .header("Authorization", format!("Bearer {}", minecraft_token))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| AppError::Auth(format!("Skin upload failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(AppError::Auth(format!(
+            "Skin upload failed: {}",
+            error_text
+        )));
+    }
+
+    Ok(())
+}
+
+pub async fn reset_skin(client: &reqwest::Client, minecraft_token: &str) -> AppResult<()> {
+    let response = client
+        .delete("https://api.minecraftservices.com/minecraft/profile/skins/active")
+        .header("Authorization", format!("Bearer {}", minecraft_token))
+        .send()
+        .await
+        .map_err(|e| AppError::Auth(format!("Skin reset failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(AppError::Auth(format!("Skin reset failed: {}", error_text)));
+    }
+
+    Ok(())
+}
+
+pub async fn change_skin_url(
+    client: &reqwest::Client,
+    minecraft_token: &str,
+    url: &str,
+    variant: &str,
+) -> AppResult<()> {
+    let json = serde_json::json!({
+        "variant": variant,
+        "url": url,
+    });
+
+    let response = client
+        .post("https://api.minecraftservices.com/minecraft/profile/skins")
+        .header("Authorization", format!("Bearer {}", minecraft_token))
+        .header("Content-Type", "application/json")
+        .json(&json)
+        .send()
+        .await
+        .map_err(|e| AppError::Auth(format!("Skin change failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(AppError::Auth(format!(
+            "Skin change failed: {}",
+            error_text
+        )));
+    }
+
+    Ok(())
+}
+
+pub async fn change_active_cape(
+    client: &reqwest::Client,
+    minecraft_token: &str,
+    cape_id: &str,
+) -> AppResult<()> {
+    let json = serde_json::json!({
+        "capeId": cape_id,
+    });
+
+    let response = client
+        .put("https://api.minecraftservices.com/minecraft/profile/capes/active")
+        .header("Authorization", format!("Bearer {}", minecraft_token))
+        .header("Content-Type", "application/json")
+        .json(&json)
+        .send()
+        .await
+        .map_err(|e| AppError::Auth(format!("Cape change failed: {}", e)))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(AppError::Auth(format!(
+            "Cape change failed: {}",
+            error_text
+        )));
+    }
+
+    Ok(())
 }
