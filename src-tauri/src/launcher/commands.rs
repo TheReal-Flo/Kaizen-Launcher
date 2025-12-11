@@ -1,3 +1,4 @@
+use crate::crypto;
 use crate::db::accounts::Account;
 use crate::db::instances::Instance;
 use crate::error::{AppError, AppResult};
@@ -1653,10 +1654,22 @@ pub async fn launch_instance(
         emit_progress("checking_java", 2);
 
         // Launch client (requires account)
-        let account = Account::get_by_id(&state_guard.db, &account_id)
+        let mut account = Account::get_by_id(&state_guard.db, &account_id)
             .await
             .map_err(AppError::from)?
             .ok_or_else(|| AppError::Auth("Account not found".to_string()))?;
+
+        // Decrypt tokens if they're encrypted (not offline accounts)
+        if account.access_token != "offline" {
+            if crypto::is_encrypted(&account.access_token) {
+                account.access_token = crypto::decrypt(&state_guard.encryption_key, &account.access_token)
+                    .map_err(|e| AppError::Encryption(format!("Failed to decrypt access token: {}", e)))?;
+            }
+            if crypto::is_encrypted(&account.refresh_token) {
+                account.refresh_token = crypto::decrypt(&state_guard.encryption_key, &account.refresh_token)
+                    .map_err(|e| AppError::Encryption(format!("Failed to decrypt refresh token: {}", e)))?;
+            }
+        }
 
         // Step 3: Loading version details
         emit_progress("building_args", 3);

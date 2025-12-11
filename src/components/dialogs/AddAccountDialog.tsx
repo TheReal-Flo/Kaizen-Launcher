@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { invoke } from "@tauri-apps/api/core"
+import { openUrl } from "@tauri-apps/plugin-opener"
 import { Loader2, ExternalLink, Copy, Check, User } from "lucide-react"
 import { useTranslation } from "@/i18n"
 import { Button } from "@/components/ui/button"
@@ -63,7 +64,7 @@ export function AddAccountDialog({
       setDeviceCode(codeInfo)
 
       // Open browser automatically
-      window.open(codeInfo.verification_uri, "_blank")
+      openUrl(codeInfo.verification_uri)
 
       // Step 2: Start polling in background
       setStatus("waiting")
@@ -153,28 +154,19 @@ export function AddAccountDialog({
         <div className="py-6">
           {mode === "select" && status === "idle" && (
             <div className="space-y-3">
-              {/* Microsoft auth temporarily disabled - waiting for API approval */}
-              <div className="relative">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-16 opacity-50 cursor-not-allowed"
-                  disabled
-                >
-                  <div className="bg-blue-500 p-2 rounded">
-                    <ExternalLink className="h-4 w-4 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <div className="font-medium">{t("accounts.microsoft")}</div>
-                    <div className="text-xs text-muted-foreground">{t("dialogs.addAccount.officialLogin")}</div>
-                  </div>
-                </Button>
-                <div className="absolute -top-2 -right-2 bg-amber-500 text-amber-950 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  {t("common.comingSoon")}
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3 h-16"
+                onClick={() => setMode("microsoft")}
+              >
+                <div className="bg-blue-500 p-2 rounded">
+                  <ExternalLink className="h-4 w-4 text-white" />
                 </div>
-              </div>
-              <p className="text-xs text-muted-foreground text-center px-2">
-                {t("dialogs.addAccount.microsoftPending")}
-              </p>
+                <div className="text-left">
+                  <div className="font-medium">{t("accounts.microsoft")}</div>
+                  <div className="text-xs text-muted-foreground">{t("dialogs.addAccount.officialLogin")}</div>
+                </div>
+              </Button>
               <Button
                 variant="outline"
                 className="w-full justify-start gap-3 h-16"
@@ -252,7 +244,7 @@ export function AddAccountDialog({
                 <Button
                   variant="outline"
                   className="gap-2"
-                  onClick={() => window.open(deviceCode.verification_uri, "_blank")}
+                  onClick={() => openUrl(deviceCode.verification_uri)}
                 >
                   <ExternalLink className="h-4 w-4" />
                   {t("dialogs.addAccount.openMicrosoftLink")}

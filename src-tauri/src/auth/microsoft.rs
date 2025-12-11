@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 // Microsoft Azure AD application for Minecraft authentication
 // Kaizen Launcher Azure AD app (Personal accounts only)
-const CLIENT_ID: &str = "0fb7e88e-feba-42e3-aaa7-79c18e2d1420";
+const CLIENT_ID: &str = "46e2883f-6711-4c42-b5fd-763e7e6930f0";
 const SCOPE: &str = "XboxLive.signin XboxLive.offline_access";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

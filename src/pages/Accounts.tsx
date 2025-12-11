@@ -6,6 +6,7 @@ import { useTranslation } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { AddAccountDialog } from "@/components/dialogs/AddAccountDialog"
 import { DeleteAccountDialog } from "@/components/dialogs/DeleteAccountDialog"
 
@@ -13,8 +14,13 @@ interface Account {
   id: string
   uuid: string
   username: string
+  access_token: string
   skin_url: string | null
   is_active: boolean
+}
+
+function isOfflineAccount(account: Account): boolean {
+  return account.access_token === "offline"
 }
 
 export function Accounts() {
@@ -130,7 +136,18 @@ export function Accounts() {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-medium">{account.username}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{account.username}</p>
+                      {isOfflineAccount(account) ? (
+                        <Badge variant="secondary" className="text-xs">
+                          {t("accounts.offline")}
+                        </Badge>
+                      ) : (
+                        <Badge variant="default" className="text-xs bg-[#00a2ed] hover:bg-[#0090d4]">
+                          {t("accounts.microsoft")}
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground">
                       {account.is_active ? t("accounts.active") : t("accounts.setActive")}
                     </p>
