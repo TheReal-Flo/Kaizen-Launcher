@@ -12,17 +12,20 @@ export default defineConfig(async () => ({
     react(),
     // Node.js polyfills for WebTorrent (P2P sharing)
     nodePolyfills({
-      include: ["buffer", "stream", "events", "util", "process", "path", "crypto"],
+      include: ["buffer", "stream", "events", "util", "process", "path", "crypto", "os"],
       globals: {
         Buffer: true,
         global: true,
         process: true,
       },
+      protocolImports: true,
     }),
   ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Stub Node.js-only modules that webtorrent/bittorrent-dht tries to use
+      "bittorrent-dht": path.resolve(__dirname, "./src/lib/stubs/bittorrent-dht.ts"),
     },
   },
   optimizeDeps: {
@@ -31,6 +34,12 @@ export default defineConfig(async () => ({
       define: {
         global: "globalThis",
       },
+    },
+  },
+  build: {
+    rollupOptions: {
+      // Handle external modules that shouldn't be bundled
+      external: [],
     },
   },
 
