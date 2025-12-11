@@ -8,6 +8,7 @@ import {
   Archive,
   User,
   Settings,
+  Sparkles,
   type LucideIcon
 } from "lucide-react"
 import { useTranslation } from "@/i18n"
@@ -199,6 +200,7 @@ export function Sidebar() {
               }
             </TooltipContent>
           </Tooltip>
+          <NavItem to="/changelog" icon={Sparkles} label={t("nav.changelog")} exact />
           <NavItem to="/settings" icon={Settings} label={t("nav.settings")} exact />
         </nav>
       </aside>

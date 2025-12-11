@@ -2370,7 +2370,7 @@ dependencies = [
 
 [[package]]
 name = "kaizen-launcher"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2381,6 +2381,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "hex",
+ "hmac",
  "libc",
  "log",
  "once_cell",

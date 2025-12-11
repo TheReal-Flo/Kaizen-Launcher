@@ -230,6 +230,73 @@ impl AppState {
             .execute(db)
             .await;
 
+        // Migration: Cloud storage configuration (global - one per app)
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS cloud_storage_config (
+                id TEXT PRIMARY KEY DEFAULT 'global',
+                provider TEXT NOT NULL,
+                enabled INTEGER DEFAULT 0,
+                auto_upload INTEGER DEFAULT 0,
+
+                -- Google Drive (OAuth)
+                google_access_token TEXT,
+                google_refresh_token TEXT,
+                google_expires_at TEXT,
+                google_folder_id TEXT,
+
+                -- Nextcloud (WebDAV)
+                nextcloud_url TEXT,
+                nextcloud_username TEXT,
+                nextcloud_password TEXT,
+                nextcloud_folder_path TEXT,
+
+                -- S3-compatible (AWS/MinIO)
+                s3_endpoint TEXT,
+                s3_region TEXT,
+                s3_bucket TEXT,
+                s3_access_key TEXT,
+                s3_secret_key TEXT,
+                s3_folder_prefix TEXT,
+
+                -- Dropbox (OAuth)
+                dropbox_access_token TEXT,
+                dropbox_refresh_token TEXT,
+                dropbox_expires_at TEXT,
+                dropbox_folder_path TEXT,
+
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+        "#,
+        )
+        .execute(db)
+        .await?;
+
+        // Migration: Cloud backup sync tracking
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS cloud_backup_sync (
+                id TEXT PRIMARY KEY,
+                local_backup_path TEXT NOT NULL,
+                instance_id TEXT NOT NULL,
+                world_name TEXT NOT NULL,
+                backup_filename TEXT NOT NULL,
+                remote_path TEXT,
+                sync_status TEXT DEFAULT 'pending',
+                last_synced_at TEXT,
+                file_size_bytes INTEGER,
+                error_message TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_cloud_sync_status ON cloud_backup_sync(sync_status);
+            CREATE INDEX IF NOT EXISTS idx_cloud_sync_instance ON cloud_backup_sync(instance_id);
+        "#,
+        )
+        .execute(db)
+        .await?;
+
         Ok(())
     }
 }

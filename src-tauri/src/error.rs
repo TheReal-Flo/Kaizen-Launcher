@@ -38,6 +38,9 @@ pub enum AppError {
     #[error("Initialization error: {0}")]
     Initialization(String),
 
+    #[error("Cloud storage error: {0}")]
+    CloudStorage(String),
+
     #[error("{0}")]
     Custom(String),
 }

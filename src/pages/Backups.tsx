@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react"
 import { invoke } from "@tauri-apps/api/core"
-import { Archive, Loader2, Search, Trash2, RotateCcw, HardDrive, Server, Gamepad2 } from "lucide-react"
+import { Archive, Loader2, Search, Trash2, RotateCcw, HardDrive, Server, Gamepad2, Upload, Check, AlertCircle } from "lucide-react"
 import { toast } from "sonner"
 import { useTranslation } from "@/i18n"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -47,6 +48,24 @@ interface Instance {
   is_proxy: boolean
 }
 
+interface CloudBackupSync {
+  id: string
+  local_backup_path: string
+  instance_id: string
+  world_name: string
+  backup_filename: string
+  remote_path: string | null
+  sync_status: "pending" | "uploading" | "synced" | "failed"
+  last_synced_at: string | null
+  file_size_bytes: number | null
+  error_message: string | null
+}
+
+interface CloudStorageConfig {
+  enabled: boolean
+  provider: string
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
   const k = 1024
@@ -82,6 +101,11 @@ export function Backups() {
   const [instanceFilter, setInstanceFilter] = useState<string>("all")
   const [sortBy, setSortBy] = useState<SortOption>("date")
 
+  // Cloud sync state
+  const [cloudConfig, setCloudConfig] = useState<CloudStorageConfig | null>(null)
+  const [cloudSyncStatuses, setCloudSyncStatuses] = useState<Map<string, CloudBackupSync>>(new Map())
+  const [uploadingBackups, setUploadingBackups] = useState<Set<string>>(new Set())
+
   // Dialogs
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
@@ -100,6 +124,23 @@ export function Backups() {
       setBackups(backupsResult)
       setStats(statsResult)
       setInstances(instancesResult)
+
+      // Load cloud config and sync statuses
+      try {
+        const [configResult, syncStatuses] = await Promise.all([
+          invoke<CloudStorageConfig | null>("get_cloud_storage_config"),
+          invoke<CloudBackupSync[]>("get_all_cloud_backups"),
+        ])
+        setCloudConfig(configResult)
+        const statusMap = new Map<string, CloudBackupSync>()
+        syncStatuses.forEach((sync) => {
+          statusMap.set(sync.backup_filename, sync)
+        })
+        setCloudSyncStatuses(statusMap)
+      } catch {
+        // Cloud storage not configured or error - ignore silently
+        setCloudConfig(null)
+      }
     } catch (err) {
       console.error("Failed to load backups:", err)
       toast.error("Failed to load backups")
@@ -160,6 +201,47 @@ export function Backups() {
     const uniqueIds = new Set(backups.map((b) => b.instance_id))
     return instances.filter((i) => uniqueIds.has(i.id))
   }, [backups, instances])
+
+  // Get cloud sync status for a backup
+  const getCloudSyncStatus = (backup: GlobalBackupInfo) => {
+    return cloudSyncStatuses.get(backup.filename)
+  }
+
+  // Upload a backup to cloud storage
+  const handleUploadToCloud = async (backup: GlobalBackupInfo) => {
+    if (!cloudConfig?.enabled) {
+      toast.error(t("cloudStorage.noCloudConfigured"))
+      return
+    }
+
+    setUploadingBackups((prev) => new Set(prev).add(backup.filename))
+
+    try {
+      const result = await invoke<CloudBackupSync>("upload_backup_to_cloud", {
+        instanceId: backup.instance_id,
+        worldName: backup.world_name,
+        backupFilename: backup.filename,
+      })
+
+      // Update local sync status
+      setCloudSyncStatuses((prev) => {
+        const newMap = new Map(prev)
+        newMap.set(backup.filename, result)
+        return newMap
+      })
+
+      toast.success(t("cloudStorage.synced"))
+    } catch (err) {
+      console.error("Failed to upload backup:", err)
+      toast.error(t("cloudStorage.failed"))
+    } finally {
+      setUploadingBackups((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(backup.filename)
+        return newSet
+      })
+    }
+  }
 
   const openDeleteDialog = (backup: GlobalBackupInfo) => {
     setSelectedBackup(backup)
@@ -229,6 +311,7 @@ export function Backups() {
   }
 
   return (
+    <TooltipProvider delayDuration={0}>
     <div className="flex flex-col gap-6">
       {/* Header with stats */}
       <div className="flex items-start justify-between">
@@ -302,52 +385,111 @@ export function Backups() {
           {/* Backups list */}
           <ScrollArea className="h-[calc(100vh-280px)]">
             <div className="space-y-2">
-              {filteredAndSortedBackups.map((backup) => (
-                <Card key={`${backup.instance_id}-${backup.world_name}-${backup.filename}`}>
-                  <CardContent className="flex items-center justify-between py-3 px-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
-                        {backup.is_server ? (
-                          <Server className="h-5 w-5 text-muted-foreground" />
-                        ) : (
-                          <Gamepad2 className="h-5 w-5 text-muted-foreground" />
+              {filteredAndSortedBackups.map((backup) => {
+                const syncStatus = getCloudSyncStatus(backup)
+                const isUploading = uploadingBackups.has(backup.filename)
+
+                return (
+                  <Card key={`${backup.instance_id}-${backup.world_name}-${backup.filename}`}>
+                    <CardContent className="flex items-center justify-between py-3 px-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                          {backup.is_server ? (
+                            <Server className="h-5 w-5 text-muted-foreground" />
+                          ) : (
+                            <Gamepad2 className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium truncate">{backup.world_name}</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {backup.instance_name}
+                            </Badge>
+                            {/* Cloud sync status badge */}
+                            {cloudConfig?.enabled && (
+                              <>
+                                {syncStatus?.sync_status === "synced" && (
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <Badge variant="outline" className="text-xs text-green-600 border-green-600/30 gap-1">
+                                        <Check className="h-3 w-3" />
+                                        {t("cloudStorage.synced")}
+                                      </Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {syncStatus.last_synced_at && formatDate(syncStatus.last_synced_at)}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {syncStatus?.sync_status === "failed" && (
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <Badge variant="outline" className="text-xs text-red-600 border-red-600/30 gap-1">
+                                        <AlertCircle className="h-3 w-3" />
+                                        {t("cloudStorage.failed")}
+                                      </Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {syncStatus.error_message || t("cloudStorage.failed")}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {(syncStatus?.sync_status === "uploading" || isUploading) && (
+                                  <Badge variant="outline" className="text-xs text-blue-600 border-blue-600/30 gap-1">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    {t("cloudStorage.uploading")}
+                                  </Badge>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground flex items-center gap-2">
+                            <span>{formatDate(backup.timestamp)}</span>
+                            <span>•</span>
+                            <span>{formatBytes(backup.size_bytes)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Cloud upload button */}
+                        {cloudConfig?.enabled && syncStatus?.sync_status !== "synced" && !isUploading && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleUploadToCloud(backup)}
+                              >
+                                <Upload className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {t("cloudStorage.uploadToCloud")}
+                            </TooltipContent>
+                          </Tooltip>
                         )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openRestoreDialog(backup)}
+                        >
+                          <RotateCcw className="h-4 w-4 mr-1.5" />
+                          {t("backups.restoreTo")}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => openDeleteDialog(backup)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium truncate">{backup.world_name}</span>
-                          <Badge variant="secondary" className="text-xs">
-                            {backup.instance_name}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-muted-foreground flex items-center gap-2">
-                          <span>{formatDate(backup.timestamp)}</span>
-                          <span>•</span>
-                          <span>{formatBytes(backup.size_bytes)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openRestoreDialog(backup)}
-                      >
-                        <RotateCcw className="h-4 w-4 mr-1.5" />
-                        {t("backups.restoreTo")}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => openDeleteDialog(backup)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                )
+              })}
               {filteredAndSortedBackups.length === 0 && (
                 <Card className="border-dashed">
                   <CardContent className="py-8 text-center text-muted-foreground">
@@ -443,5 +585,6 @@ export function Backups() {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   )
 }

@@ -1,5 +1,6 @@
 mod auth;
 pub mod cache;
+mod cloud_storage;
 pub mod crypto;
 mod db;
 mod devtools;
@@ -215,6 +216,23 @@ pub fn run() {
             // DevTools commands
             devtools::get_app_metrics,
             devtools::is_dev_mode,
+            // Cloud storage commands
+            cloud_storage::commands::get_oauth_availability,
+            cloud_storage::commands::get_cloud_storage_config,
+            cloud_storage::commands::save_cloud_storage_config,
+            cloud_storage::commands::delete_cloud_storage_config,
+            cloud_storage::commands::test_cloud_connection,
+            cloud_storage::commands::cloud_oauth_start_google,
+            cloud_storage::commands::cloud_oauth_complete_google,
+            cloud_storage::commands::cloud_oauth_start_dropbox,
+            cloud_storage::commands::cloud_oauth_complete_dropbox,
+            cloud_storage::commands::upload_backup_to_cloud,
+            cloud_storage::commands::upload_all_pending_backups,
+            cloud_storage::commands::get_backup_sync_status,
+            cloud_storage::commands::get_all_cloud_backups,
+            cloud_storage::commands::list_remote_backups,
+            cloud_storage::commands::delete_backup_sync_record,
+            cloud_storage::commands::mark_backup_for_upload,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

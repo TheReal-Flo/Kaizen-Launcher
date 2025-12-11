@@ -14,6 +14,9 @@ import {
   MoreVertical,
   Search,
   HardDrive,
+  Upload,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,6 +56,16 @@ interface BackupInfo {
   timestamp: string;
   size_bytes: number;
   world_name: string;
+}
+
+interface CloudStorageConfig {
+  enabled: boolean;
+  provider: string;
+}
+
+interface CloudBackupSync {
+  backup_filename: string;
+  sync_status: "pending" | "uploading" | "synced" | "failed";
 }
 
 interface WorldsTabProps {
@@ -115,6 +128,11 @@ export function WorldsTab({ instanceId, isServer }: WorldsTabProps) {
   const [newName, setNewName] = useState("");
   const [deleteBackupDialogOpen, setDeleteBackupDialogOpen] = useState(false);
 
+  // Cloud storage
+  const [cloudConfig, setCloudConfig] = useState<CloudStorageConfig | null>(null);
+  const [cloudSyncStatuses, setCloudSyncStatuses] = useState<Map<string, CloudBackupSync>>(new Map());
+  const [uploadingBackup, setUploadingBackup] = useState<string | null>(null);
+
   // Load worlds
   const loadWorlds = useCallback(async () => {
     if (!instanceId) return;
@@ -134,7 +152,60 @@ export function WorldsTab({ instanceId, isServer }: WorldsTabProps) {
 
   useEffect(() => {
     loadWorlds();
+    loadCloudConfig();
   }, [loadWorlds]);
+
+  // Load cloud config
+  const loadCloudConfig = async () => {
+    try {
+      const config = await invoke<CloudStorageConfig | null>("get_cloud_storage_config");
+      setCloudConfig(config);
+      if (config?.enabled) {
+        loadCloudSyncStatuses();
+      }
+    } catch {
+      // Cloud storage not configured
+    }
+  };
+
+  // Load cloud sync statuses
+  const loadCloudSyncStatuses = async () => {
+    try {
+      const syncs = await invoke<CloudBackupSync[]>("get_all_cloud_backups");
+      const statusMap = new Map<string, CloudBackupSync>();
+      syncs.forEach((sync) => {
+        statusMap.set(sync.backup_filename, sync);
+      });
+      setCloudSyncStatuses(statusMap);
+    } catch {
+      // Ignore errors
+    }
+  };
+
+  // Upload backup to cloud
+  const handleCloudUpload = async (backup: BackupInfo) => {
+    if (!selectedWorld) return;
+    setUploadingBackup(backup.filename);
+    try {
+      await invoke("upload_backup_to_cloud", {
+        instanceId,
+        worldName: selectedWorld.name,
+        backupFilename: backup.filename,
+      });
+      toast.success(t("cloudStorage.uploadSuccess"));
+      await loadCloudSyncStatuses();
+    } catch (err) {
+      console.error("Failed to upload backup:", err);
+      toast.error(t("cloudStorage.uploadFailed"));
+    } finally {
+      setUploadingBackup(null);
+    }
+  };
+
+  // Get sync status for a backup
+  const getSyncStatus = (filename: string) => {
+    return cloudSyncStatuses.get(filename)?.sync_status;
+  };
 
   // Filter worlds
   const filteredWorlds = useMemo(() => {
@@ -518,6 +589,43 @@ export function WorldsTab({ instanceId, isServer }: WorldsTabProps) {
                         </p>
                       </div>
                       <div className="flex items-center gap-1">
+                        {/* Cloud sync status badge */}
+                        {cloudConfig?.enabled && getSyncStatus(backup.filename) && (
+                          <Badge
+                            variant="outline"
+                            className={
+                              getSyncStatus(backup.filename) === "synced"
+                                ? "bg-green-500/10 text-green-500"
+                                : getSyncStatus(backup.filename) === "failed"
+                                ? "bg-red-500/10 text-red-500"
+                                : "bg-yellow-500/10 text-yellow-500"
+                            }
+                          >
+                            {getSyncStatus(backup.filename) === "synced" && <Check className="h-3 w-3 mr-1" />}
+                            {getSyncStatus(backup.filename) === "failed" && <AlertCircle className="h-3 w-3 mr-1" />}
+                            {getSyncStatus(backup.filename) === "synced"
+                              ? t("cloudStorage.synced")
+                              : getSyncStatus(backup.filename) === "failed"
+                              ? t("cloudStorage.failed")
+                              : t("cloudStorage.pending")}
+                          </Badge>
+                        )}
+                        {/* Cloud upload button */}
+                        {cloudConfig?.enabled && getSyncStatus(backup.filename) !== "synced" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCloudUpload(backup)}
+                            disabled={uploadingBackup === backup.filename}
+                            title={t("cloudStorage.uploadToCloud")}
+                          >
+                            {uploadingBackup === backup.filename ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
