@@ -272,6 +272,8 @@ pub async fn launch_minecraft(
             tokio::spawn(async move {
                 while let Ok(Some(line)) = stdout_reader.next_line().await {
                     debug!("[MC STDOUT] {}", line);
+                    // Yield to prevent busy spinning and reduce CPU usage
+                    tokio::task::yield_now().await;
                 }
             });
         }
@@ -281,6 +283,8 @@ pub async fn launch_minecraft(
             tokio::spawn(async move {
                 while let Ok(Some(line)) = stderr_reader.next_line().await {
                     error!("[MC STDERR] {}", line);
+                    // Yield to prevent busy spinning and reduce CPU usage
+                    tokio::task::yield_now().await;
                 }
             });
         }
@@ -884,28 +888,40 @@ pub async fn launch_server(
     let instance_name_stdout = instance.name.clone();
     let db_stdout = db.clone();
     let app_stdout = app.clone();
+
+    // Check if Discord webhooks are enabled once at startup to avoid checking on every line
+    let discord_enabled = {
+        use crate::discord::db as discord_db;
+        if let Ok(Some(config)) = discord_db::get_discord_config(&db).await {
+            config.webhook_enabled && (config.webhook_player_join || config.webhook_player_leave)
+        } else {
+            false
+        }
+    };
+
     if let Some(stdout) = stdout {
         tokio::spawn(async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // Debug: print all lines containing "joined" or "left"
-                if line.contains("joined") || line.contains("left") {
-                    debug!("[DISCORD DEBUG] Log line: {}", line);
-                }
-                // Check for player join/leave events
-                if let Some((event_type, player_name)) = discord_hooks::parse_player_event(&line) {
-                    let db_clone = db_stdout.clone();
-                    let instance_name = instance_name_stdout.clone();
-                    let player = player_name.clone();
-                    tokio::spawn(async move {
-                        if event_type == "join" {
-                            discord_hooks::on_player_joined(&db_clone, &instance_name, &player).await;
-                        } else {
-                            discord_hooks::on_player_left(&db_clone, &instance_name, &player).await;
-                        }
-                    });
+                // Only check for player events if Discord webhooks are enabled
+                // and line contains "the game" (common to both join/leave)
+                if discord_enabled && line.contains("the game") {
+                    // Check for player join/leave events
+                    if let Some((event_type, player_name)) = discord_hooks::parse_player_event(&line) {
+                        debug!("Detected player {} event: {}", event_type, player_name);
+                        let db_clone = db_stdout.clone();
+                        let instance_name = instance_name_stdout.clone();
+                        let player = player_name.clone();
+                        tokio::spawn(async move {
+                            if event_type == "join" {
+                                discord_hooks::on_player_joined(&db_clone, &instance_name, &player).await;
+                            } else {
+                                discord_hooks::on_player_left(&db_clone, &instance_name, &player).await;
+                            }
+                        });
+                    }
                 }
 
                 let _ = app_stdout.emit(
@@ -937,6 +953,9 @@ pub async fn launch_server(
                         is_error: true,
                     },
                 );
+
+                // Yield to prevent busy spinning and reduce CPU usage
+                tokio::task::yield_now().await;
             }
         });
     }

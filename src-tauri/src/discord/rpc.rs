@@ -81,6 +81,12 @@ pub fn connect() -> AppResult<()> {
         let mut stream = UnixStream::connect(&socket_path)
             .map_err(|e| AppError::Discord(format!("Failed to connect to Discord: {}", e)))?;
 
+        // Set read/write timeouts to prevent infinite hangs
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .map_err(|e| AppError::Discord(format!("Failed to set read timeout: {}", e)))?;
+        stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))
+            .map_err(|e| AppError::Discord(format!("Failed to set write timeout: {}", e)))?;
+
         // Send handshake (opcode 0)
         let handshake = json!({
             "v": 1,

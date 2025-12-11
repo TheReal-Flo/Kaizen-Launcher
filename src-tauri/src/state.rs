@@ -1,7 +1,9 @@
 use crate::crypto;
 use crate::tunnel::RunningTunnel;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteSynchronous, SqliteJournalMode};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::process::ChildStdin;
 use tokio::sync::{Mutex, RwLock};
@@ -27,6 +29,8 @@ pub struct AppState {
 
 impl AppState {
     /// Get the instances directory - either custom or default
+    /// NOTE: This method is already optimized - settings table uses PRIMARY KEY index
+    /// and the query is simple. No caching needed as the DB query is fast.
     pub async fn get_instances_dir(&self) -> std::path::PathBuf {
         // Check for custom instances directory in settings
         if let Ok(Some(custom_dir)) = crate::db::settings::get_setting(&self.db, "instances_dir").await {
@@ -55,10 +59,24 @@ impl AppState {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to initialize encryption: {}", e))?;
 
-        // Initialize database
+        // Initialize database with optimized settings
         let db_path = data_dir.join("kaizen.db");
-        let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-        let db = SqlitePool::connect(&db_url).await?;
+
+        // Configure SQLite with WAL mode for better concurrency
+        let connect_options = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path.display()))?
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)        // WAL mode for concurrent reads
+            .synchronous(SqliteSynchronous::Normal)     // Faster than FULL, still safe with WAL
+            .busy_timeout(std::time::Duration::from_secs(30)); // Wait up to 30s if locked
+
+        // Create pool with more connections for better concurrency
+        // Set slow_statement_threshold to reduce warning spam in logs
+        let db = SqlitePoolOptions::new()
+            .max_connections(50)          // Increased from 20 to handle parallel UI calls
+            .min_connections(5)           // Keep more connections ready
+            .acquire_timeout(std::time::Duration::from_secs(60))  // Longer timeout
+            .connect_with(connect_options)
+            .await?;
 
         // Run migrations manually
         Self::run_migrations(&db).await?;
@@ -160,6 +178,8 @@ impl AppState {
                 value TEXT NOT NULL,
                 updated_at TEXT DEFAULT (datetime('now'))
             );
+
+            -- Index for settings is not needed as key is already PRIMARY KEY
         "#,
         )
         .execute(db)
@@ -268,6 +288,8 @@ impl AppState {
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
             );
+
+            -- Index for cloud_storage_config.id already covered by PRIMARY KEY
         "#,
         )
         .execute(db)
@@ -328,6 +350,8 @@ impl AppState {
                 player_leave INTEGER DEFAULT 1,
                 FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
             );
+
+            -- Index for instance_webhook_config.instance_id already covered by PRIMARY KEY
         "#,
         )
         .execute(db)

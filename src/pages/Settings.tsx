@@ -136,11 +136,11 @@ export function Settings() {
       }
     } catch (error) {
       console.error("Failed to load Java data:", error)
-      toast.error(t("settings.unableToLoadJava"))
+      toast.error("Unable to load Java data")
     } finally {
       setLoadingJava(false)
     }
-  }, [t])
+  }, [])
 
   const loadStorageData = useCallback(async () => {
     setLoadingStorage(true)
@@ -155,11 +155,11 @@ export function Settings() {
       setInstancesDir(dirInfo)
     } catch (error) {
       console.error("Failed to load storage data:", error)
-      toast.error(t("settings.unableToLoadStorage"))
+      toast.error("Unable to load storage data")
     } finally {
       setLoadingStorage(false)
     }
-  }, [t])
+  }, [])
 
   useEffect(() => {
     loadJavaData()

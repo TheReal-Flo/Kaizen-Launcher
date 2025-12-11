@@ -181,15 +181,17 @@ export function TourOverlay() {
       setTimeout(() => nextStep(), 0)
     }
 
+    // PERFORMANCE: Reduced update frequency from 100ms to 200ms for tour progress
+    // Still smooth enough for user experience but cuts updates in half
     timerRef.current = setInterval(() => {
-      currentProgress += 2 // 2% every 100ms = 5 seconds total
+      currentProgress += 4 // 4% every 200ms = 5 seconds total
 
       if (currentProgress >= 100) {
         advanceStep()
       } else {
         setProgress(currentProgress)
       }
-    }, 100)
+    }, 200)
 
     return () => {
       if (timerRef.current) {

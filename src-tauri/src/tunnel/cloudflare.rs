@@ -100,6 +100,8 @@ pub async fn start_cloudflare_tunnel(
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
+                // Yield to prevent busy spinning
+                tokio::task::yield_now().await;
                 debug!("[CLOUDFLARE] {}", line);
 
                 // Check for URL in the line
@@ -178,6 +180,8 @@ pub async fn start_cloudflare_tunnel(
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                // Yield to prevent busy spinning
+                tokio::task::yield_now().await;
                 debug!("[CLOUDFLARE STDOUT] {}", line);
             }
         });

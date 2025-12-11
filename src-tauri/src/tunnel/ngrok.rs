@@ -294,6 +294,8 @@ pub async fn start_ngrok_tunnel(
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
+                // Yield to prevent busy spinning
+                tokio::task::yield_now().await;
                 debug!("[NGROK] {}", line);
 
                 // Check for URL in the line (try multiple formats)
@@ -394,6 +396,8 @@ pub async fn start_ngrok_tunnel(
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
+                // Yield to prevent busy spinning
+                tokio::task::yield_now().await;
                 debug!("[NGROK STDERR] {}", line);
 
                 // Check for URL in stderr too

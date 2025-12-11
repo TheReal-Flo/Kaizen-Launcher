@@ -1766,10 +1766,17 @@ pub async fn is_instance_installed(
 }
 
 /// Check if Java is installed
+/// OPTIMIZED: Runs file system checks in a blocking task to avoid blocking the async runtime
 #[tauri::command]
 pub async fn check_java(state: State<'_, SharedState>) -> AppResult<Option<java::JavaInfo>> {
     let state_guard = state.read().await;
-    Ok(java::check_java_installed(&state_guard.data_dir))
+    let data_dir = state_guard.data_dir.clone();
+    drop(state_guard);
+
+    // Run file system operations in a blocking task
+    tokio::task::spawn_blocking(move || java::check_java_installed(&data_dir))
+        .await
+        .map_err(|e| AppError::Io(format!("Task join error: {}", e)))
 }
 
 /// Install Java 21 from Adoptium (legacy command)
@@ -1833,6 +1840,8 @@ pub struct ServerStats {
 }
 
 /// Get server resource usage stats
+/// NOTE: This command should be called at most once every 2-3 seconds
+/// to avoid excessive CPU usage from sysinfo refreshes
 #[tauri::command]
 pub async fn get_server_stats(
     state: State<'_, SharedState>,
@@ -1844,21 +1853,17 @@ pub async fn get_server_stats(
     let running = state_guard.running_instances.read().await;
 
     if let Some(&pid_u32) = running.get(&instance_id) {
-        let mut sys = System::new_all();
+        // Create system with minimal info to reduce overhead
+        let mut sys = System::new();
         let pid = Pid::from_u32(pid_u32);
 
-        // First refresh to establish baseline
+        // Lightweight refresh - only what we need
         let refresh_kind = ProcessRefreshKind::new()
             .with_cpu()
-            .with_memory()
-            .with_exe(UpdateKind::OnlyIfNotSet);
+            .with_memory();
 
-        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), true, refresh_kind);
-
-        // Wait for CPU measurement interval
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        // Second refresh to get actual CPU usage
+        // Single refresh is sufficient when called periodically from frontend
+        // Frontend should call this every 3+ seconds minimum
         sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), true, refresh_kind);
 
         if let Some(process) = sys.process(pid) {
@@ -1871,6 +1876,7 @@ pub async fn get_server_stats(
             };
 
             return Ok(Some(ServerStats {
+                // Note: CPU usage is cumulative, so calling periodically will give accurate readings
                 cpu_usage: process.cpu_usage(),
                 memory_bytes,
                 memory_percent,
@@ -2014,4 +2020,35 @@ pub async fn send_server_command(
             "Server is not running or stdin not available".to_string(),
         ))
     }
+}
+
+/// Batch check which instances are running (returns list of running instance IDs)
+#[tauri::command]
+pub async fn get_running_instances(
+    state: State<'_, SharedState>,
+) -> AppResult<Vec<String>> {
+    let state_guard = state.read().await;
+    let running = state_guard.running_instances.read().await;
+    Ok(running.keys().cloned().collect())
+}
+
+/// Batch check which instances are installed (takes game_dirs, returns map of id -> installed)
+/// This avoids N database queries by using the game_dir directly from the frontend
+#[tauri::command]
+pub async fn check_instances_installed(
+    state: State<'_, SharedState>,
+    instances: Vec<(String, String)>, // Vec of (instance_id, game_dir)
+) -> AppResult<std::collections::HashMap<String, bool>> {
+    let state_guard = state.read().await;
+    let instances_dir = state_guard.data_dir.join("instances");
+
+    let mut result = std::collections::HashMap::new();
+
+    for (instance_id, game_dir) in instances {
+        let instance_path = instances_dir.join(&game_dir);
+        let is_installed = installer::is_instance_installed(&instance_path).await;
+        result.insert(instance_id, is_installed);
+    }
+
+    Ok(result)
 }

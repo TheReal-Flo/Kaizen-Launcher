@@ -235,6 +235,9 @@ pub async fn start_playit_tunnel(
                         }
                     }
                 }
+
+                // Yield after processing each line to prevent busy spinning
+                tokio::task::yield_now().await;
             }
         });
     }
@@ -269,6 +272,9 @@ pub async fn start_playit_tunnel(
                         );
                     }
                 }
+
+                // Yield after processing each line to prevent busy spinning
+                tokio::task::yield_now().await;
             }
         });
     }

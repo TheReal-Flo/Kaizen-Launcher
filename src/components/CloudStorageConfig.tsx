@@ -299,12 +299,12 @@ export function CloudStorageConfig() {
         await invoke("save_cloud_storage_config", { config: newConfig })
         setConfig(newConfig)
         if (showToast) {
-          toast.success(t("cloudStorage.configSaved"))
+          toast.success("Configuration saved")
         }
       } catch (err) {
         console.error("Failed to save config:", err)
         if (showToast) {
-          toast.error(t("cloudStorage.saveFailed"))
+          toast.error("Failed to save configuration")
         }
       } finally {
         setIsSaving(false)
@@ -325,12 +325,11 @@ export function CloudStorageConfig() {
       s3AccessKey,
       s3SecretKey,
       s3FolderPrefix,
-      t,
     ]
   )
 
   // Test connection
-  const testConnection = async () => {
+  const testConnection = useCallback(async () => {
     setIsTesting(true)
     setTestResult(null)
     try {
@@ -340,7 +339,7 @@ export function CloudStorageConfig() {
       const result = await invoke<ConnectionTestResult>("test_cloud_connection")
       setTestResult(result)
       if (result.success) {
-        toast.success(t("cloudStorage.connectionSuccess"))
+        toast.success("Connection successful")
       } else {
         toast.error(result.message)
       }
@@ -351,7 +350,7 @@ export function CloudStorageConfig() {
     } finally {
       setIsTesting(false)
     }
-  }
+  }, [saveConfig])
 
   // Format bytes
   const formatBytes = (bytes: number): string => {
@@ -378,8 +377,29 @@ export function CloudStorageConfig() {
     }
   }
 
+  // Complete Google OAuth flow (poll for token)
+  const completeGoogleOAuth = useCallback(async (deviceCodeResponse: DeviceCodeResponse) => {
+    try {
+      await invoke("cloud_oauth_complete_google", {
+        deviceCode: deviceCodeResponse.device_code,
+        interval: deviceCodeResponse.interval,
+        expiresIn: deviceCodeResponse.expires_in,
+      })
+      toast.success("Connected to Google Drive")
+      setDeviceCode(null)
+      // Reload config to get the new tokens
+      await loadConfig()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setAuthError(message)
+      toast.error(message)
+    } finally {
+      setIsAuthenticating(false)
+    }
+  }, [loadConfig])
+
   // Start Google OAuth flow
-  const startGoogleOAuth = async () => {
+  const startGoogleOAuth = useCallback(async () => {
     setIsAuthenticating(true)
     setAuthError(null)
     setDeviceCode(null)
@@ -400,31 +420,10 @@ export function CloudStorageConfig() {
       setIsAuthenticating(false)
       toast.error(message)
     }
-  }
-
-  // Complete Google OAuth flow (poll for token)
-  const completeGoogleOAuth = async (deviceCodeResponse: DeviceCodeResponse) => {
-    try {
-      await invoke("cloud_oauth_complete_google", {
-        deviceCode: deviceCodeResponse.device_code,
-        interval: deviceCodeResponse.interval,
-        expiresIn: deviceCodeResponse.expires_in,
-      })
-      toast.success(t("cloudStorage.connected"))
-      setDeviceCode(null)
-      // Reload config to get the new tokens
-      await loadConfig()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      setAuthError(message)
-      toast.error(message)
-    } finally {
-      setIsAuthenticating(false)
-    }
-  }
+  }, [completeGoogleOAuth])
 
   // Disconnect Google Drive
-  const disconnectGoogle = async () => {
+  const disconnectGoogle = useCallback(async () => {
     try {
       const newConfig: CloudStorageConfig = {
         ...config,
@@ -435,14 +434,34 @@ export function CloudStorageConfig() {
       }
       await invoke("save_cloud_storage_config", { config: newConfig })
       setConfig(newConfig)
-      toast.success(t("cloudStorage.notConnected"))
+      toast.success("Disconnected from Google Drive")
     } catch (err) {
       console.error("Failed to disconnect:", err)
     }
-  }
+  }, [config])
+
+  // Complete Dropbox OAuth flow (after user enters code)
+  const completeDropboxOAuth = useCallback(async (code: string) => {
+    setIsAuthenticating(true)
+    try {
+      await invoke("cloud_oauth_complete_dropbox", {
+        authorizationCode: code,
+      })
+      toast.success("Connected to Dropbox")
+      setDeviceCode(null)
+      // Reload config to get the new tokens
+      await loadConfig()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setAuthError(message)
+      toast.error(message)
+    } finally {
+      setIsAuthenticating(false)
+    }
+  }, [loadConfig])
 
   // Start Dropbox OAuth flow
-  const startDropboxOAuth = async () => {
+  const startDropboxOAuth = useCallback(async () => {
     setIsAuthenticating(true)
     setAuthError(null)
     setDeviceCode(null)
@@ -462,30 +481,10 @@ export function CloudStorageConfig() {
       setIsAuthenticating(false)
       toast.error(message)
     }
-  }
-
-  // Complete Dropbox OAuth flow (after user enters code)
-  const completeDropboxOAuth = async (code: string) => {
-    setIsAuthenticating(true)
-    try {
-      await invoke("cloud_oauth_complete_dropbox", {
-        authorizationCode: code,
-      })
-      toast.success(t("cloudStorage.connected"))
-      setDeviceCode(null)
-      // Reload config to get the new tokens
-      await loadConfig()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      setAuthError(message)
-      toast.error(message)
-    } finally {
-      setIsAuthenticating(false)
-    }
-  }
+  }, [])
 
   // Disconnect Dropbox
-  const disconnectDropbox = async () => {
+  const disconnectDropbox = useCallback(async () => {
     try {
       const newConfig: CloudStorageConfig = {
         ...config,
@@ -495,19 +494,19 @@ export function CloudStorageConfig() {
       }
       await invoke("save_cloud_storage_config", { config: newConfig })
       setConfig(newConfig)
-      toast.success(t("cloudStorage.notConnected"))
+      toast.success("Disconnected from Dropbox")
     } catch (err) {
       console.error("Failed to disconnect:", err)
     }
-  }
+  }, [config])
 
   // Copy user code to clipboard
-  const copyUserCode = async () => {
+  const copyUserCode = useCallback(async () => {
     if (deviceCode?.user_code) {
       await navigator.clipboard.writeText(deviceCode.user_code)
       toast.success("Code copied!")
     }
-  }
+  }, [deviceCode?.user_code])
 
   if (isLoading) {
     return (

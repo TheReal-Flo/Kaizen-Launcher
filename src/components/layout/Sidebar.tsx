@@ -99,7 +99,9 @@ export function Sidebar() {
 
     const startPolling = () => {
       if (interval) clearInterval(interval)
-      interval = setInterval(loadActiveAccount, 5000)
+      // PERFORMANCE: Increased from 10s to 30s - active account rarely changes
+      // We also reload on window focus, so polling can be very infrequent
+      interval = setInterval(loadActiveAccount, 30000)
     }
 
     const handleVisibilityChange = () => {

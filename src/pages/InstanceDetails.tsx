@@ -286,7 +286,8 @@ export function InstanceDetails() {
       toast.error(t("instanceDetails.modToggleError"))
       console.error("Failed to toggle mod:", err)
     }
-  }, [instanceId, loadMods, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId, loadMods])
 
   const handleDeleteMod = useCallback(async (filename: string) => {
     if (!instanceId) return
@@ -296,9 +297,10 @@ export function InstanceDetails() {
       loadMods()
     } catch (err) {
       toast.error(t("instanceDetails.modDeleteError"))
-      console.error("Failed to delete mod:", err)
+      console.error("Failed to toggle mod:", err)
     }
-  }, [instanceId, loadMods, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId, loadMods])
 
   const handleOpenModsFolder = useCallback(async () => {
     if (!instanceId) return
@@ -343,7 +345,8 @@ export function InstanceDetails() {
     } finally {
       setIsCheckingUpdates(false)
     }
-  }, [instanceId, contentType, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId, contentType])
 
   // Update a single mod - memoized
   const handleUpdateMod = useCallback(async (update: ModUpdateInfo) => {
@@ -372,7 +375,8 @@ export function InstanceDetails() {
         return newSet
       })
     }
-  }, [instanceId, contentType, loadMods, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId, contentType, loadMods])
 
   // Update all mods - uses ref to avoid stale closure
   const modUpdatesRef = useRef(modUpdates)
@@ -449,7 +453,8 @@ export function InstanceDetails() {
     } finally {
       setIsDeletingSelected(false)
     }
-  }, [instanceId, selectedMods, loadMods, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId, selectedMods, loadMods])
 
   // Update selected mods (only those with updates available)
   const handleUpdateSelectedMods = useCallback(async () => {
@@ -465,7 +470,8 @@ export function InstanceDetails() {
       await handleUpdateMod(update)
     }
     setSelectedMods(new Set())
-  }, [modUpdates, mods, selectedMods, handleUpdateMod, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modUpdates, mods, selectedMods, handleUpdateMod])
 
   // Callback when content is changed - memoized
   const handleContentChanged = useCallback(() => {

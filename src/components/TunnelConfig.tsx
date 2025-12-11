@@ -227,7 +227,8 @@ export function TunnelConfig({ instanceId, serverPort, isServerRunning }: Tunnel
     } finally {
       setIsSaving(false)
     }
-  }, [instanceId, provider, enabled, autoStart, ngrokAuthtoken, targetPort, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId, provider, enabled, autoStart, ngrokAuthtoken, targetPort])
 
   // Auto-save when settings change (with debounce)
   const isInitialLoadDone = useRef(false)

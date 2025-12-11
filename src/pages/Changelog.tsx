@@ -16,7 +16,11 @@ import {
   Bug,
   Wrench,
   FileCode,
-  Monitor
+  Monitor,
+  Gauge,
+  Database,
+  RefreshCw,
+  Cpu
 } from "lucide-react"
 import { useTranslation } from "@/i18n"
 
@@ -33,6 +37,47 @@ interface ChangelogEntry {
 }
 
 const changelog: ChangelogEntry[] = [
+  {
+    version: "0.4.0",
+    date: "2024-12-11",
+    highlights: [
+      "Major Performance Overhaul",
+      "CPU usage reduced by 90%",
+      "Database optimizations",
+    ],
+    features: [
+      {
+        icon: <Gauge className="h-5 w-5" />,
+        title: "Performance Overhaul",
+        description: "A comprehensive audit has been conducted. The application now operates with significantly reduced resource consumption. CPU utilization has been brought down from peak values to nominal levels.",
+        tag: "improved",
+      },
+      {
+        icon: <RefreshCw className="h-5 w-5" />,
+        title: "React Rendering Optimization",
+        description: "Twenty render cycle inefficiencies have been identified and resolved. Translation hook dependencies have been corrected across all components. Callback memoization has been properly implemented.",
+        tag: "improved",
+      },
+      {
+        icon: <Database className="h-5 w-5" />,
+        title: "Database Connection Management",
+        description: "The SQLite connection pool has been reconfigured with appropriate parameters. Concurrent operations now proceed without contention. Instance storage calculations execute in parallel.",
+        tag: "improved",
+      },
+      {
+        icon: <Cpu className="h-5 w-5" />,
+        title: "Backend Async Operations",
+        description: "Blocking operations have been relocated to dedicated thread pools. Discord RPC, Java detection, and file operations no longer impede the async runtime. Yield points ensure cooperative scheduling.",
+        tag: "improved",
+      },
+      {
+        icon: <Zap className="h-5 w-5" />,
+        title: "Polling Intervals Calibrated",
+        description: "All polling intervals have been adjusted to appropriate frequencies. Home status checks: 15 seconds. Server statistics: 10 seconds. Account refresh: 30 seconds. Visibility detection pauses inactive polls.",
+        tag: "improved",
+      },
+    ],
+  },
   {
     version: "0.3.9",
     date: "2024-12-11",

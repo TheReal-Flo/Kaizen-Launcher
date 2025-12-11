@@ -620,60 +620,44 @@ export function Instances() {
       const result = await invoke<Instance[]>("get_instances")
       setInstances(result)
 
-      // Check which instances are installed (in parallel)
-      const installedChecks = await Promise.all(
-        result.map(async (instance) => {
-          try {
-            const isInstalled = await invoke<boolean>("is_instance_installed", {
-              instanceId: instance.id
-            })
-            return { id: instance.id, isInstalled }
-          } catch (e) {
-            console.error("Failed to check if instance is installed:", e)
-            return { id: instance.id, isInstalled: false }
-          }
+      // Check which instances are installed (single batch call instead of N calls)
+      const instancesWithDirs: [string, string][] = result.map(instance => [instance.id, instance.game_dir])
+      try {
+        const installedMap = await invoke<Record<string, boolean>>("check_instances_installed", {
+          instances: instancesWithDirs
         })
-      )
-      const installed = new Set<string>(
-        installedChecks.filter(c => c.isInstalled).map(c => c.id)
-      )
-      setInstalledVersions(installed)
-
-      // Load icons in batches of 5 to avoid overwhelming the system
-      const BATCH_SIZE = 5
-      const instancesWithIcons = result.filter(i => i.icon_path)
-      const icons: Record<string, string | null> = {}
-
-      // Initialize all icons as null first
-      result.forEach(i => { icons[i.id] = null })
-
-      // Load icons in batches
-      for (let i = 0; i < instancesWithIcons.length; i += BATCH_SIZE) {
-        const batch = instancesWithIcons.slice(i, i + BATCH_SIZE)
-        const batchResults = await Promise.all(
-          batch.map(async (instance) => {
-            try {
-              const iconUrl = await invoke<string | null>("get_instance_icon", {
-                instanceId: instance.id
-              })
-              return { id: instance.id, iconUrl }
-            } catch (e) {
-              console.error("Failed to load icon for instance:", instance.id, e)
-              return { id: instance.id, iconUrl: null }
-            }
-          })
+        const installed = new Set<string>(
+          Object.entries(installedMap).filter(([, isInstalled]) => isInstalled).map(([id]) => id)
         )
-        // Update icons progressively
-        batchResults.forEach(r => { icons[r.id] = r.iconUrl })
-        setInstanceIcons({ ...icons })
+        setInstalledVersions(installed)
+      } catch (e) {
+        console.error("Failed to check installed instances:", e)
+        setInstalledVersions(new Set())
+      }
+
+      // Load all icons in a single batch call (no database queries, just file reads)
+      const instancesForIcons: [string, string, string | null][] = result.map(
+        instance => [instance.id, instance.game_dir, instance.icon_path]
+      )
+      try {
+        const iconsMap = await invoke<Record<string, string | null>>("get_instance_icons", {
+          instances: instancesForIcons
+        })
+        setInstanceIcons(iconsMap)
+      } catch (e) {
+        console.error("Failed to load instance icons:", e)
+        // Initialize all icons as null on error
+        const emptyIcons: Record<string, string | null> = {}
+        result.forEach(i => { emptyIcons[i.id] = null })
+        setInstanceIcons(emptyIcons)
       }
     } catch (err) {
       console.error("Failed to load instances:", err)
-      toast.error(t("accounts.unableToLoad"))
+      toast.error("Unable to load instances")
     } finally {
       setIsLoading(false)
     }
-  }, [t])
+  }, [])
 
   useEffect(() => {
     loadInstances()
@@ -715,15 +699,15 @@ export function Instances() {
       unlistenStatus.then(fn => fn()).catch(() => {})
       unlistenInstall.then(fn => fn()).catch(() => {})
     }
-  }, [loadInstances])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Check running instances when instances list changes
+  // Check running instances once on mount only
   useEffect(() => {
     if (instances.length > 0) {
       checkRunningInstances()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instances])
+  }, [instances.length])
 
   const handleInstall = useCallback(async (instance: Instance) => {
     setError(null)
@@ -738,7 +722,8 @@ export function Instances() {
       toast.error(t("instances.unableToInstall"))
       setError(String(err))
     }
-  }, [startInstallation, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startInstallation])
 
   const handleLaunch = useCallback(async (instance: Instance) => {
     setError(null)
@@ -765,7 +750,8 @@ export function Instances() {
     } finally {
       setLaunchingInstance(null)
     }
-  }, [t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const openDeleteDialog = useCallback((instance: Instance) => {
     setInstanceToDelete(instance)
@@ -811,23 +797,18 @@ export function Instances() {
     } finally {
       setStoppingInstance(null)
     }
-  }, [t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const checkRunningInstances = async () => {
-    const running = new Set<string>()
-    for (const instance of instances) {
-      try {
-        const isRunning = await invoke<boolean>("is_instance_running", {
-          instanceId: instance.id
-        })
-        if (isRunning) {
-          running.add(instance.id)
-        }
-      } catch {
-        // Ignore errors
-      }
+    try {
+      // Use batch command - single call instead of N calls
+      const runningIds = await invoke<string[]>("get_running_instances")
+      setRunningInstances(new Set(runningIds))
+    } catch {
+      // Ignore errors
+      setRunningInstances(new Set())
     }
-    setRunningInstances(running)
   }
 
   // Helper to get icon URL for an instance
@@ -873,7 +854,8 @@ export function Instances() {
         t={t}
       />
     )
-  }, [viewMode, installedVersions, isInstalling, getInstallation, launchingInstance, launchStep, runningInstances, stoppingInstance, getIconUrl, favorites, handleNavigate, toggleFavorite, handleLaunch, handleInstall, handleStop, openDeleteDialog, formatPlaytime, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, installedVersions, isInstalling, getInstallation, launchingInstance, launchStep, runningInstances, stoppingInstance, getIconUrl, favorites, handleNavigate, toggleFavorite, handleLaunch, handleInstall, handleStop, openDeleteDialog, formatPlaytime])
 
   const sortLabels: Record<SortBy, string> = {
     name: t("common.name"),

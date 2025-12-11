@@ -64,15 +64,17 @@ export function DevMonitor({ visible, onClose }: DevMonitorProps) {
   useEffect(() => {
     if (!visible) return
 
+    // PERFORMANCE: Reduced from 1s to 2s to minimize state updates in dev monitor
     const interval = setInterval(() => {
       const currentCount = globalRenderCount
       const delta = currentCount - lastRenderCountRef.current
 
       setDisplayedRenderCount(currentCount)
-      setRendersPerSec(delta) // delta per second since interval is 1000ms
+      // Adjust calculation since we're now updating every 2 seconds
+      setRendersPerSec(Math.round(delta / 2))
 
       lastRenderCountRef.current = currentCount
-    }, 1000)
+    }, 2000)
 
     return () => clearInterval(interval)
   }, [visible])
@@ -91,7 +93,8 @@ export function DevMonitor({ visible, onClose }: DevMonitorProps) {
     if (!visible) return
 
     fetchMetrics()
-    const interval = setInterval(fetchMetrics, 1000)
+    // PERFORMANCE: Reduced from 1s to 3s to minimize backend CPU usage for metrics collection
+    const interval = setInterval(fetchMetrics, 3000)
     return () => clearInterval(interval)
   }, [visible, fetchMetrics])
 

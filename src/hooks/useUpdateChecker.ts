@@ -119,7 +119,8 @@ export function useUpdateChecker(autoCheck = true): UseUpdateCheckerReturn {
       };
       checkSetting();
     }
-  }, [autoCheck, checkForUpdates]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCheck]);
 
   return {
     checking,

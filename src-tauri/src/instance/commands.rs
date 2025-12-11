@@ -3,6 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::instance::worlds::{self, BackupInfo, BackupStats, GlobalBackupInfo, WorldInfo};
 use crate::minecraft::versions;
 use crate::state::SharedState;
+use futures_util::future;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use sysinfo::System;
@@ -1473,6 +1474,57 @@ pub async fn get_instance_icon(
     Ok(Some(format!("data:{};base64,{}", mime_type, base64_data)))
 }
 
+/// Batch get instance icons - takes (instance_id, game_dir, icon_path) tuples
+/// Returns a map of instance_id -> Option<base64_data_url>
+/// This avoids N database queries since we already have icon_path from get_instances
+#[tauri::command]
+pub async fn get_instance_icons(
+    state: State<'_, SharedState>,
+    instances: Vec<(String, String, Option<String>)>, // (instance_id, game_dir, icon_path)
+) -> AppResult<std::collections::HashMap<String, Option<String>>> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
+    let state_guard = state.read().await;
+    let instances_dir = state_guard.get_instances_dir().await;
+
+    let mut result = std::collections::HashMap::new();
+
+    for (instance_id, game_dir, icon_path) in instances {
+        let icon_data = if let Some(ref path) = icon_path {
+            let icon_full_path = instances_dir.join(&game_dir).join(path);
+
+            if icon_full_path.exists() {
+                match fs::read(&icon_full_path).await {
+                    Ok(bytes) => {
+                        // Determine MIME type from extension
+                        let extension = path.rsplit('.').next().unwrap_or("png").to_lowercase();
+                        let mime_type = match extension.as_str() {
+                            "png" => "image/png",
+                            "jpg" | "jpeg" => "image/jpeg",
+                            "gif" => "image/gif",
+                            "webp" => "image/webp",
+                            "svg" => "image/svg+xml",
+                            "ico" => "image/x-icon",
+                            _ => "image/png",
+                        };
+                        let base64_data = STANDARD.encode(&bytes);
+                        Some(format!("data:{};base64,{}", mime_type, base64_data))
+                    }
+                    Err(_) => None,
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        result.insert(instance_id, icon_data);
+    }
+
+    Ok(result)
+}
+
 /// Get total mod count across all instances
 #[tauri::command]
 pub async fn get_total_mod_count(state: State<'_, SharedState>) -> AppResult<u32> {
@@ -1618,6 +1670,7 @@ pub async fn get_storage_info(state: State<'_, SharedState>) -> AppResult<Storag
 }
 
 /// Get storage info for each instance
+/// OPTIMIZED: Uses parallel directory size calculations for better performance
 #[tauri::command]
 pub async fn get_instances_storage(
     state: State<'_, SharedState>,
@@ -1627,28 +1680,37 @@ pub async fn get_instances_storage(
         .await
         .map_err(AppError::from)?;
 
-    let mut result = Vec::new();
+    let instances_base_dir = state_guard.get_instances_dir().await;
+
+    // Drop the lock before parallel operations
+    drop(state_guard);
+
+    // Calculate all directory sizes in parallel for better performance
+    let mut tasks = Vec::new();
 
     for instance in instances {
-        let instance_dir = state_guard
-            .data_dir
-            .join("instances")
-            .join(&instance.game_dir);
-        let size = if instance_dir.exists() {
-            get_dir_size(&instance_dir).await
-        } else {
-            0
-        };
+        let instance_dir = instances_base_dir.join(&instance.game_dir);
 
-        result.push(InstanceStorageInfo {
-            id: instance.id,
-            name: instance.name,
-            size_bytes: size,
-            mc_version: instance.mc_version,
-            loader: instance.loader,
-            last_played: instance.last_played,
+        tasks.push(async move {
+            let size = if instance_dir.exists() {
+                get_dir_size(&instance_dir).await
+            } else {
+                0
+            };
+
+            InstanceStorageInfo {
+                id: instance.id,
+                name: instance.name,
+                size_bytes: size,
+                mc_version: instance.mc_version,
+                loader: instance.loader,
+                last_played: instance.last_played,
+            }
         });
     }
+
+    // Execute all size calculations in parallel
+    let mut result = future::join_all(tasks).await;
 
     // Sort by size descending
     result.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));

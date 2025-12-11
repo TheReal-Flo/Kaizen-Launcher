@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
@@ -79,33 +79,20 @@ export function Home() {
       setActiveAccount(accountResult)
       setTotalMods(modsCount)
 
-      // Load icons in batches of 5 to avoid overwhelming the system
-      const BATCH_SIZE = 5
-      const instancesWithIcons = instancesResult.filter(i => i.icon_path)
-      const icons: Record<string, string | null> = {}
-
-      // Initialize all icons as null first
-      instancesResult.forEach(i => { icons[i.id] = null })
-
-      // Load icons in batches
-      for (let i = 0; i < instancesWithIcons.length; i += BATCH_SIZE) {
-        const batch = instancesWithIcons.slice(i, i + BATCH_SIZE)
-        const batchResults = await Promise.all(
-          batch.map(async (instance) => {
-            try {
-              const iconUrl = await invoke<string | null>("get_instance_icon", {
-                instanceId: instance.id
-              })
-              return { id: instance.id, iconUrl }
-            } catch (e) {
-              console.error("Failed to load icon for instance:", instance.id, e)
-              return { id: instance.id, iconUrl: null }
-            }
-          })
-        )
-        // Update icons progressively
-        batchResults.forEach(r => { icons[r.id] = r.iconUrl })
-        setInstanceIcons({ ...icons })
+      // Load all icons in a single batch call
+      const instancesForIcons: [string, string, string | null][] = instancesResult.map(
+        instance => [instance.id, instance.game_dir, instance.icon_path]
+      )
+      try {
+        const iconsMap = await invoke<Record<string, string | null>>("get_instance_icons", {
+          instances: instancesForIcons
+        })
+        setInstanceIcons(iconsMap)
+      } catch (e) {
+        console.error("Failed to load instance icons:", e)
+        const emptyIcons: Record<string, string | null> = {}
+        instancesResult.forEach(i => { emptyIcons[i.id] = null })
+        setInstanceIcons(emptyIcons)
       }
 
       // Select the most recently played instance (only if none selected)
@@ -121,9 +108,9 @@ export function Home() {
       })
     } catch (err) {
       console.error("Failed to load data:", err)
-      toast.error(t("home.unableToLoadData"))
+      toast.error("Unable to load data")
     }
-  }, [t])
+  }, [])
 
   useEffect(() => {
     loadData()
@@ -163,7 +150,8 @@ export function Home() {
 
     const startPolling = () => {
       if (interval) clearInterval(interval)
-      interval = setInterval(checkStatus, 2000)
+      // PERFORMANCE: Reduced from 5s to 15s to minimize DB load and CPU usage
+      interval = setInterval(checkStatus, 15000)
     }
 
     const handleVisibilityChange = () => {
@@ -196,7 +184,7 @@ export function Home() {
       if (event.payload.stage === "complete") {
         setInstallProgress(null)
         setInstanceStatus("ready")
-        toast.success(t("home.installComplete"))
+        toast.success("Installation complete")
       } else {
         setInstallProgress({
           current: event.payload.current,
@@ -229,11 +217,11 @@ export function Home() {
       unlistenLaunchProgress.then(fn => fn()).catch(() => {})
       unlistenStatus.then(fn => fn()).catch(() => {})
     }
-  }, [selectedInstance, t])
+  }, [selectedInstance])
 
-  const getIconUrl = (instance: Instance): string | null => {
+  const getIconUrl = useCallback((instance: Instance): string | null => {
     return instanceIcons[instance.id] || null
-  }
+  }, [instanceIcons])
 
   const handleLaunch = async () => {
     if (!selectedInstance || !activeAccount) return
@@ -280,16 +268,20 @@ export function Home() {
     }
   }
 
-  const totalPlaytime = instances.reduce((acc, i) => acc + i.total_playtime_seconds, 0)
-  const formatPlaytime = (seconds: number): string => {
+  const totalPlaytime = useMemo(() =>
+    instances.reduce((acc, i) => acc + i.total_playtime_seconds, 0),
+    [instances]
+  )
+
+  const formatPlaytime = useCallback((seconds: number): string => {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
     if (hours > 0) return `${hours}h ${minutes}m`
     return `${minutes}m`
-  }
+  }, [])
 
-  const formatLastPlayed = (dateStr: string | null): string => {
-    if (!dateStr) return t("common.never")
+  const formatLastPlayed = useCallback((dateStr: string | null): string => {
+    if (!dateStr) return "Never"
     const date = new Date(dateStr)
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
@@ -297,12 +289,12 @@ export function Home() {
     const diffHours = Math.floor(diffMs / 3600000)
     const diffDays = Math.floor(diffMs / 86400000)
 
-    if (diffMins < 1) return t("common.justNow")
-    if (diffMins < 60) return `${t("common.ago")} ${diffMins}${t("common.minutes")}`
-    if (diffHours < 24) return `${t("common.ago")} ${diffHours}${t("common.hours")}`
-    if (diffDays < 7) return `${t("common.ago")} ${diffDays}${t("common.days")}`
+    if (diffMins < 1) return "Just now"
+    if (diffMins < 60) return `${diffMins} minutes ago`
+    if (diffHours < 24) return `${diffHours} hours ago`
+    if (diffDays < 7) return `${diffDays} days ago`
     return date.toLocaleDateString()
-  }
+  }, [])
 
   const getLaunchStepText = () => {
     if (!launchStep) return t("home.launching")

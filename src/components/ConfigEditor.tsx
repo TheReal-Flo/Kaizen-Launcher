@@ -908,7 +908,8 @@ function VisualConfigEditor({ content, fileType, onChange }: VisualConfigEditorP
     } else {
       setParseError(t("configEditor.unableToParseVisual"))
     }
-  }, [content, fileType, t])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, fileType])
 
   const handleConfigChange = useCallback(
     (newConfig: ConfigValue) => {

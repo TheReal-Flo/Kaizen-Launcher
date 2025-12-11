@@ -39,6 +39,7 @@ pub async fn get_cloud_storage_config(
 }
 
 /// Save the cloud storage configuration
+/// OPTIMIZED: Batch processes encryption checks to reduce overhead
 #[tauri::command]
 pub async fn save_cloud_storage_config(
     state: State<'_, SharedState>,
@@ -46,44 +47,23 @@ pub async fn save_cloud_storage_config(
 ) -> AppResult<()> {
     let state = state.read().await;
 
-    // Encrypt sensitive fields before saving
-    // Nextcloud password
-    if let Some(ref password) = config.nextcloud_password {
-        if !password.is_empty() && !crypto::is_encrypted(password) {
-            config.nextcloud_password = Some(crypto::encrypt(&state.encryption_key, password)?);
+    // Helper function to encrypt if needed
+    let encrypt_if_needed = |value: &Option<String>| -> AppResult<Option<String>> {
+        match value {
+            Some(text) if !text.is_empty() && !crypto::is_encrypted(text) => {
+                Ok(Some(crypto::encrypt(&state.encryption_key, text)?))
+            }
+            other => Ok(other.clone()),
         }
-    }
+    };
 
-    // S3 secret key
-    if let Some(ref secret) = config.s3_secret_key {
-        if !secret.is_empty() && !crypto::is_encrypted(secret) {
-            config.s3_secret_key = Some(crypto::encrypt(&state.encryption_key, secret)?);
-        }
-    }
-
-    // Google tokens
-    if let Some(ref token) = config.google_access_token {
-        if !token.is_empty() && !crypto::is_encrypted(token) {
-            config.google_access_token = Some(crypto::encrypt(&state.encryption_key, token)?);
-        }
-    }
-    if let Some(ref token) = config.google_refresh_token {
-        if !token.is_empty() && !crypto::is_encrypted(token) {
-            config.google_refresh_token = Some(crypto::encrypt(&state.encryption_key, token)?);
-        }
-    }
-
-    // Dropbox tokens
-    if let Some(ref token) = config.dropbox_access_token {
-        if !token.is_empty() && !crypto::is_encrypted(token) {
-            config.dropbox_access_token = Some(crypto::encrypt(&state.encryption_key, token)?);
-        }
-    }
-    if let Some(ref token) = config.dropbox_refresh_token {
-        if !token.is_empty() && !crypto::is_encrypted(token) {
-            config.dropbox_refresh_token = Some(crypto::encrypt(&state.encryption_key, token)?);
-        }
-    }
+    // Encrypt sensitive fields before saving - batch process for efficiency
+    config.nextcloud_password = encrypt_if_needed(&config.nextcloud_password)?;
+    config.s3_secret_key = encrypt_if_needed(&config.s3_secret_key)?;
+    config.google_access_token = encrypt_if_needed(&config.google_access_token)?;
+    config.google_refresh_token = encrypt_if_needed(&config.google_refresh_token)?;
+    config.dropbox_access_token = encrypt_if_needed(&config.dropbox_access_token)?;
+    config.dropbox_refresh_token = encrypt_if_needed(&config.dropbox_refresh_token)?;
 
     db::save_config(&state.db, &config).await
 }

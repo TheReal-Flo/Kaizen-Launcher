@@ -198,7 +198,7 @@ pub async fn on_backup_created(
 
 /// Set Discord Rich Presence to Idle (launcher open, no game running)
 /// Uses a persistent global connection that stays open
-/// Retries connection up to 5 times with 2 second delays
+/// Single attempt only - no retry loop to prevent CPU spikes
 pub async fn set_idle_activity(db: &SqlitePool) {
     debug!("set_idle_activity called");
 
@@ -219,32 +219,16 @@ pub async fn set_idle_activity(db: &SqlitePool) {
         return;
     }
 
-    // Retry connection up to 5 times (Discord may not be ready yet)
-    for attempt in 1..=5 {
-        debug!("Connecting to Discord (attempt {}/5)...", attempt);
+    // Run blocking IPC operations in spawn_blocking to prevent blocking the async runtime
+    let result = tokio::task::spawn_blocking(|| {
+        rpc::connect()?;
+        rpc::set_activity(&DiscordActivity::Idle)
+    }).await;
 
-        if let Err(e) = rpc::connect() {
-            debug!("Connection attempt {} failed: {}", attempt, e);
-            if attempt < 5 {
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                continue;
-            }
-            debug!("All connection attempts failed, giving up");
-            return;
-        }
-
-        debug!("Connected, setting Idle activity");
-
-        match rpc::set_activity(&DiscordActivity::Idle) {
-            Ok(_) => {
-                debug!("Idle activity set successfully");
-                return;
-            }
-            Err(e) => {
-                debug!("Failed to set Idle activity: {}", e);
-                return;
-            }
-        }
+    match result {
+        Ok(Ok(_)) => debug!("Idle activity set successfully"),
+        Ok(Err(e)) => debug!("Failed to set idle activity: {}", e),
+        Err(e) => debug!("Task join error: {}", e),
     }
 }
 
@@ -270,21 +254,10 @@ pub async fn set_playing_activity(
         }
     };
 
-    debug!("rpc_enabled = {}", config.rpc_enabled);
-
     if !config.rpc_enabled {
         debug!("RPC is disabled in settings");
         return;
     }
-
-    debug!("Connecting to Discord...");
-
-    if let Err(e) = rpc::connect() {
-        debug!("Failed to connect to Discord: {}", e);
-        return;
-    }
-
-    debug!("Connected to Discord successfully");
 
     let activity = DiscordActivity::Playing {
         instance_name: if config.rpc_show_instance_name {
@@ -305,9 +278,16 @@ pub async fn set_playing_activity(
         start_time: chrono::Utc::now().timestamp(),
     };
 
-    match rpc::set_activity(&activity) {
-        Ok(_) => debug!("Activity set successfully"),
-        Err(e) => debug!("Failed to set activity: {}", e),
+    // Run blocking IPC operations in spawn_blocking to prevent blocking the async runtime
+    let result = tokio::task::spawn_blocking(move || {
+        rpc::connect()?;
+        rpc::set_activity(&activity)
+    }).await;
+
+    match result {
+        Ok(Ok(_)) => debug!("Activity set successfully"),
+        Ok(Err(e)) => debug!("Failed to set activity: {}", e),
+        Err(e) => debug!("Task join error: {}", e),
     }
 }
 
@@ -329,10 +309,6 @@ pub async fn set_hosting_activity(
         return;
     }
 
-    if rpc::connect().is_err() {
-        return;
-    }
-
     let activity = DiscordActivity::Hosting {
         instance_name: if config.rpc_show_instance_name {
             instance_name.to_string()
@@ -349,7 +325,11 @@ pub async fn set_hosting_activity(
         start_time: chrono::Utc::now().timestamp(),
     };
 
-    let _ = rpc::set_activity(&activity);
+    // Run blocking IPC operations in spawn_blocking to prevent blocking the async runtime
+    let _ = tokio::task::spawn_blocking(move || {
+        rpc::connect()?;
+        rpc::set_activity(&activity)
+    }).await;
 }
 
 /// Clear Discord Rich Presence and return to Idle state
@@ -366,7 +346,10 @@ pub async fn clear_activity(db: &SqlitePool) {
 
     // Instead of clearing, return to Idle state
     if rpc::is_connected() {
-        let _ = rpc::set_activity(&DiscordActivity::Idle);
+        // Run blocking IPC operations in spawn_blocking to prevent blocking the async runtime
+        let _ = tokio::task::spawn_blocking(|| {
+            rpc::set_activity(&DiscordActivity::Idle)
+        }).await;
         debug!("Returned to Idle state");
     }
 }

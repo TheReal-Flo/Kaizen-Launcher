@@ -65,8 +65,9 @@ export function ServerStats({ instanceId, isRunning }: ServerStatsProps) {
 
     const startPolling = () => {
       if (interval) clearInterval(interval)
-      // Poll every 3 seconds (backend needs 500ms per call)
-      interval = setInterval(fetchStats, 3000)
+      // PERFORMANCE: Reduced from 3s to 10s to minimize backend CPU load
+      // Backend needs 500ms per call, polling every 10s is sufficient for stats
+      interval = setInterval(fetchStats, 10000)
     }
 
     const handleVisibilityChange = () => {

@@ -91,6 +91,8 @@ pub async fn start_bore_tunnel(
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
+                // Yield to prevent busy spinning
+                tokio::task::yield_now().await;
                 debug!("[BORE] {}", line);
 
                 // Check for URL in the line
@@ -181,6 +183,8 @@ pub async fn start_bore_tunnel(
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {
+                // Yield to prevent busy spinning
+                tokio::task::yield_now().await;
                 debug!("[BORE STDERR] {}", line);
 
                 // Check for URL in stderr too
