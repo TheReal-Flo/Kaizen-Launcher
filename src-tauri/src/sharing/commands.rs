@@ -3,6 +3,7 @@
 use crate::db::instances::Instance;
 use crate::error::AppResult;
 use crate::sharing::manifest::{ExportOptions, ExportableContent, PreparedExport, SharingManifest};
+use crate::sharing::server::{self, ActiveShare, RunningShares};
 use crate::sharing::{export, import};
 use crate::state::SharedState;
 use std::path::PathBuf;
@@ -77,4 +78,155 @@ pub async fn get_sharing_temp_dir(state: State<'_, SharedState>) -> AppResult<St
     let state = state.read().await;
     let temp_dir = export::get_sharing_temp_dir(&state.data_dir);
     Ok(temp_dir.to_string_lossy().to_string())
+}
+
+// ============ NEW: Tunnel-based sharing commands ============
+
+/// Start sharing an instance via HTTP tunnel
+#[tauri::command]
+pub async fn start_share(
+    state: State<'_, SharedState>,
+    running_shares: State<'_, RunningShares>,
+    app: AppHandle,
+    package_path: String,
+    instance_name: String,
+) -> AppResult<ActiveShare> {
+    let state = state.read().await;
+    let path = PathBuf::from(&package_path);
+
+    server::start_share(
+        &state.data_dir,
+        &path,
+        &instance_name,
+        app,
+        running_shares.inner().clone(),
+    )
+    .await
+}
+
+/// Stop sharing
+#[tauri::command]
+pub async fn stop_share(
+    running_shares: State<'_, RunningShares>,
+    share_id: String,
+) -> AppResult<()> {
+    server::stop_share(&share_id, running_shares.inner().clone()).await
+}
+
+/// Get all active shares
+#[tauri::command]
+pub async fn get_active_shares(running_shares: State<'_, RunningShares>) -> AppResult<Vec<ActiveShare>> {
+    Ok(server::get_active_shares(running_shares.inner().clone()).await)
+}
+
+/// Stop all shares
+#[tauri::command]
+pub async fn stop_all_shares(running_shares: State<'_, RunningShares>) -> AppResult<()> {
+    server::stop_all_shares(running_shares.inner().clone()).await;
+    Ok(())
+}
+
+/// Download instance from a share URL and import it
+#[tauri::command]
+pub async fn download_and_import_share(
+    state: State<'_, SharedState>,
+    app: AppHandle,
+    share_url: String,
+    new_name: Option<String>,
+) -> AppResult<Instance> {
+    use crate::error::AppError;
+
+    let state_guard = state.read().await;
+    let instances_dir = state_guard.get_instances_dir().await;
+    let temp_dir = export::get_sharing_temp_dir(&state_guard.data_dir);
+
+    // Ensure temp dir exists
+    tokio::fs::create_dir_all(&temp_dir)
+        .await
+        .map_err(|e| AppError::Io(format!("Failed to create temp dir: {}", e)))?;
+
+    // Generate temp file path
+    let temp_file = temp_dir.join(format!("download_{}.kaizen", uuid::Uuid::new_v4()));
+
+    // Download the file
+    tracing::info!("[SHARE] Downloading from {}...", share_url);
+
+    let response = state_guard
+        .http_client
+        .get(&share_url)
+        .send()
+        .await
+        .map_err(|e| AppError::Network(format!("Failed to download: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AppError::Network(format!(
+            "Download failed with status: {}",
+            response.status()
+        )));
+    }
+
+    // Get content length for progress
+    let total_size = response.content_length().unwrap_or(0);
+    tracing::info!("[SHARE] Download size: {} bytes", total_size);
+
+    // Stream to file
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| AppError::Network(format!("Failed to read response: {}", e)))?;
+
+    tokio::fs::write(&temp_file, &bytes)
+        .await
+        .map_err(|e| AppError::Io(format!("Failed to write temp file: {}", e)))?;
+
+    tracing::info!("[SHARE] Download complete, importing...");
+
+    // Import the instance
+    let instance = import::import_instance(&app, &state_guard.db, &instances_dir, &temp_file, new_name).await?;
+
+    // Cleanup temp file
+    let _ = tokio::fs::remove_file(&temp_file).await;
+
+    Ok(instance)
+}
+
+/// Fetch manifest from a share URL (for preview before download)
+#[tauri::command]
+pub async fn fetch_share_manifest(
+    state: State<'_, SharedState>,
+    share_url: String,
+) -> AppResult<SharingManifest> {
+    use crate::error::AppError;
+
+    let state_guard = state.read().await;
+
+    // Construct manifest URL
+    let manifest_url = if share_url.ends_with('/') {
+        format!("{}manifest", share_url)
+    } else {
+        format!("{}/manifest", share_url)
+    };
+
+    tracing::info!("[SHARE] Fetching manifest from {}...", manifest_url);
+
+    let response = state_guard
+        .http_client
+        .get(&manifest_url)
+        .send()
+        .await
+        .map_err(|e| AppError::Network(format!("Failed to fetch manifest: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AppError::Network(format!(
+            "Manifest fetch failed with status: {}",
+            response.status()
+        )));
+    }
+
+    let manifest: SharingManifest = response
+        .json()
+        .await
+        .map_err(|e| AppError::Custom(format!("Failed to parse manifest: {}", e)))?;
+
+    Ok(manifest)
 }

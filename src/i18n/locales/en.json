@@ -1180,9 +1180,16 @@
     "magnetLink": "Magnet link",
     "peers": "Peers",
     "uploaded": "Uploaded",
+    "downloads": "Downloads",
     "keepOpenToSeed": "Keep the app open to continue sharing with peers",
+    "keepOpenToShare": "Keep the app open to continue sharing",
+    "creatingTunnel": "Creating tunnel...",
+    "waitingForUrl": "Waiting for public URL...",
+    "shareLink": "Share link",
     "stopSharing": "Stop sharing",
     "keepSharing": "Keep sharing",
+    "fromUrl": "From URL",
+    "shareLinkHelp": "Paste a share link from another user",
     "fromP2P": "From P2P link",
     "fromFile": "From file",
     "magnetLinkHelp": "Paste a magnet link shared by another user",
@@ -1204,6 +1211,9 @@
     "instanceName": "Instance name",
     "importing": "Importing...",
     "importSuccess": "Import successful!",
-    "instanceReady": "Instance \"{name}\" is ready to play!"
+    "instanceReady": "Instance \"{name}\" is ready to play!",
+    "invalidShareLink": "Invalid share link",
+    "fetchingManifest": "Fetching instance info...",
+    "fetchPreview": "Fetch & Preview"
   }
 }

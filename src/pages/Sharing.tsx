@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Share2,
-  Users,
+  Download,
   Upload,
   Copy,
   StopCircle,
   Clock,
   Package,
+  Link2,
 } from "lucide-react";
 import { useTranslation } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -28,9 +31,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useSharingStore, type SeedSession } from "@/stores/sharingStore";
-import { webtorrentClient } from "@/lib/webtorrent";
-import { invoke } from "@tauri-apps/api/core";
+
+// Types matching Rust backend
+interface ActiveShare {
+  share_id: string;
+  instance_name: string;
+  package_path: string;
+  local_port: number;
+  public_url: string | null;
+  download_count: number;
+  uploaded_bytes: number;
+  started_at: string;
+  file_size: number;
+}
+
+interface ShareStatusEvent {
+  share_id: string;
+  status: string;
+  public_url?: string;
+  error?: string;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -40,8 +60,9 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-function formatDuration(startedAt: number): string {
-  const seconds = Math.floor((Date.now() - startedAt) / 1000);
+function formatDuration(startedAt: string): string {
+  const start = new Date(startedAt).getTime();
+  const seconds = Math.floor((Date.now() - start) / 1000);
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
@@ -49,50 +70,89 @@ function formatDuration(startedAt: number): string {
 
 export function Sharing() {
   const { t } = useTranslation();
-  const { activeSeeds, removeSeed } = useSharingStore();
-  const [seedToStop, setSeedToStop] = useState<SeedSession | null>(null);
+  const [activeShares, setActiveShares] = useState<ActiveShare[]>([]);
+  const [shareToStop, setShareToStop] = useState<ActiveShare | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const seeds = Array.from(activeSeeds.values());
+  // Fetch active shares on mount
+  useEffect(() => {
+    const fetchShares = async () => {
+      try {
+        const shares = await invoke<ActiveShare[]>("get_active_shares");
+        setActiveShares(shares);
+      } catch (err) {
+        console.error("[SHARE] Failed to fetch active shares:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const handleCopyMagnet = async (seed: SeedSession) => {
-    if (!seed.magnetUri) return;
+    fetchShares();
+
+    // Refresh periodically
+    const interval = setInterval(fetchShares, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Listen for share status events
+  useEffect(() => {
+    const unlisten = listen<ShareStatusEvent>("share-status", async (event) => {
+      console.log("[SHARE] Status event:", event.payload);
+      // Refresh active shares when status changes
+      try {
+        const shares = await invoke<ActiveShare[]>("get_active_shares");
+        setActiveShares(shares);
+      } catch (err) {
+        console.error("[SHARE] Failed to refresh shares:", err);
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const handleCopyLink = async (share: ActiveShare) => {
+    if (!share.public_url) return;
     try {
-      await navigator.clipboard.writeText(seed.magnetUri);
-      setCopiedId(seed.exportId);
+      await navigator.clipboard.writeText(share.public_url);
+      setCopiedId(share.share_id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch (err) {
       console.error("Failed to copy:", err);
     }
   };
 
-  const handleStopSeed = async (seed: SeedSession) => {
+  const handleStopShare = async (share: ActiveShare) => {
     try {
-      // Stop WebTorrent seeding
-      webtorrentClient.stopSeed(seed.exportId);
-
-      // Cleanup temp file
-      await invoke("cleanup_export", { exportId: seed.exportId });
-
-      // Remove from store
-      removeSeed(seed.exportId);
+      await invoke("stop_share", { shareId: share.share_id });
+      setActiveShares((prev) =>
+        prev.filter((s) => s.share_id !== share.share_id)
+      );
     } catch (err) {
-      console.error("Failed to stop seed:", err);
+      console.error("[SHARE] Failed to stop share:", err);
     }
-    setSeedToStop(null);
+    setShareToStop(null);
   };
 
   const handleStopAll = async () => {
-    for (const seed of seeds) {
-      try {
-        webtorrentClient.stopSeed(seed.exportId);
-        await invoke("cleanup_export", { exportId: seed.exportId });
-        removeSeed(seed.exportId);
-      } catch (err) {
-        console.error("Failed to stop seed:", err);
-      }
+    try {
+      await invoke("stop_all_shares");
+      setActiveShares([]);
+    } catch (err) {
+      console.error("[SHARE] Failed to stop all shares:", err);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center">
+        <Share2 className="h-12 w-12 text-muted-foreground animate-pulse" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -107,7 +167,7 @@ export function Sharing() {
             {t("sharing.subtitle")}
           </p>
         </div>
-        {seeds.length > 0 && (
+        {activeShares.length > 0 && (
           <Button variant="destructive" onClick={handleStopAll}>
             <StopCircle className="h-4 w-4 mr-2" />
             {t("sharing.stopAll")}
@@ -117,7 +177,7 @@ export function Sharing() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
-        {seeds.length === 0 ? (
+        {activeShares.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Share2 className="h-16 w-16 text-muted-foreground/50 mb-4" />
             <h2 className="text-xl font-semibold mb-2">
@@ -129,8 +189,8 @@ export function Sharing() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {seeds.map((seed) => (
-              <Card key={seed.exportId}>
+            {activeShares.map((share) => (
+              <Card key={share.share_id}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -139,11 +199,11 @@ export function Sharing() {
                       </div>
                       <div>
                         <CardTitle className="text-lg">
-                          {seed.instanceName}
+                          {share.instance_name}
                         </CardTitle>
                         <CardDescription className="flex items-center gap-2 mt-1">
                           <Clock className="h-3 w-3" />
-                          {t("sharing.seedingFor", { duration: formatDuration(seed.startedAt) })}
+                          {t("sharing.seedingFor", { duration: formatDuration(share.started_at) })}
                         </CardDescription>
                       </div>
                     </div>
@@ -153,43 +213,55 @@ export function Sharing() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center justify-between">
-                    {/* Stats */}
-                    <div className="flex items-center gap-6 text-sm">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Users className="h-4 w-4" />
-                        <span>
-                          {seed.peerCount} {t("sharing.peers")}
+                  <div className="flex flex-col gap-3">
+                    {/* Share URL */}
+                    {share.public_url && (
+                      <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
+                        <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="text-sm font-mono truncate flex-1">
+                          {share.public_url}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Upload className="h-4 w-4" />
-                        <span>{formatBytes(seed.uploadedBytes)}</span>
-                      </div>
-                    </div>
+                    )}
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-2">
-                      {seed.magnetUri && (
+                    <div className="flex items-center justify-between">
+                      {/* Stats */}
+                      <div className="flex items-center gap-6 text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Download className="h-4 w-4" />
+                          <span>
+                            {share.download_count} {t("sharing.downloads")}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Upload className="h-4 w-4" />
+                          <span>{formatBytes(share.uploaded_bytes)}</span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2">
+                        {share.public_url && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCopyLink(share)}
+                          >
+                            <Copy className="h-4 w-4 mr-2" />
+                            {copiedId === share.share_id
+                              ? t("sharing.copied")
+                              : t("sharing.copyMagnet")}
+                          </Button>
+                        )}
                         <Button
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
-                          onClick={() => handleCopyMagnet(seed)}
+                          onClick={() => setShareToStop(share)}
                         >
-                          <Copy className="h-4 w-4 mr-2" />
-                          {copiedId === seed.exportId
-                            ? t("sharing.copied")
-                            : t("sharing.copyMagnet")}
+                          <StopCircle className="h-4 w-4 mr-2" />
+                          {t("sharing.stop")}
                         </Button>
-                      )}
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setSeedToStop(seed)}
-                      >
-                        <StopCircle className="h-4 w-4 mr-2" />
-                        {t("sharing.stop")}
-                      </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -200,20 +272,20 @@ export function Sharing() {
       </div>
 
       {/* Stop confirmation dialog */}
-      <AlertDialog open={!!seedToStop} onOpenChange={() => setSeedToStop(null)}>
+      <AlertDialog open={!!shareToStop} onOpenChange={() => setShareToStop(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("sharing.stopSeedingTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("sharing.stopSeedingDescription", {
-                name: seedToStop?.instanceName ?? "",
+                name: shareToStop?.instance_name ?? "",
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => seedToStop && handleStopSeed(seedToStop)}
+              onClick={() => shareToStop && handleStopShare(shareToStop)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t("sharing.stopSharing")}

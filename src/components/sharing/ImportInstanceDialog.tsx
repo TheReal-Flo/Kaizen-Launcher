@@ -15,6 +15,7 @@ import {
   Check,
   AlertCircle,
   FolderOpen,
+  Link2,
 } from "lucide-react"
 import { useTranslation } from "@/i18n"
 import { Button } from "@/components/ui/button"
@@ -31,7 +32,6 @@ import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { useSharingStore, type SharingManifest, type SharingProgress } from "@/stores/sharingStore"
-import { webtorrentClient, type TorrentProgress } from "@/lib/webtorrent"
 
 interface ImportInstanceDialogProps {
   open: boolean
@@ -39,7 +39,7 @@ interface ImportInstanceDialogProps {
   onSuccess?: () => void
 }
 
-type ImportStep = "input" | "downloading" | "preview" | "importing" | "complete"
+type ImportStep = "input" | "fetching" | "preview" | "downloading" | "importing" | "complete"
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
@@ -47,10 +47,6 @@ function formatBytes(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB"]
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i]
-}
-
-function formatSpeed(bytesPerSecond: number): string {
-  return formatBytes(bytesPerSecond) + "/s"
 }
 
 export function ImportInstanceDialog({
@@ -64,19 +60,16 @@ export function ImportInstanceDialog({
   // State
   const [step, setStep] = useState<ImportStep>("input")
   const [error, setError] = useState<string | null>(null)
-  const [inputMode, setInputMode] = useState<"magnet" | "file">("magnet")
+  const [inputMode, setInputMode] = useState<"url" | "file">("url")
 
   // Input state
-  const [magnetUri, setMagnetUri] = useState("")
+  const [shareUrl, setShareUrl] = useState("")
   const [localFilePath, setLocalFilePath] = useState("")
-
-  // Download state
-  const [downloadProgress, setDownloadProgress] = useState<TorrentProgress | null>(null)
-  const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null)
 
   // Preview state
   const [manifest, setManifest] = useState<SharingManifest | null>(null)
   const [newName, setNewName] = useState("")
+  const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null)
 
   // Import progress
   const [importProgress, setImportProgressLocal] = useState<SharingProgress | null>(null)
@@ -86,12 +79,11 @@ export function ImportInstanceDialog({
     if (!open) {
       setStep("input")
       setError(null)
-      setMagnetUri("")
+      setShareUrl("")
       setLocalFilePath("")
-      setDownloadProgress(null)
-      setDownloadedFilePath(null)
       setManifest(null)
       setNewName("")
+      setDownloadedFilePath(null)
       setImportProgressLocal(null)
     }
   }, [open])
@@ -111,10 +103,11 @@ export function ImportInstanceDialog({
   const handlePasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText()
-      if (text && text.startsWith("magnet:")) {
-        setMagnetUri(text)
+      if (text && (text.startsWith("http://") || text.startsWith("https://"))) {
+        setShareUrl(text)
+        setError(null)
       } else {
-        setError(t("sharing.invalidMagnetLink"))
+        setError(t("sharing.invalidShareLink"))
       }
     } catch (err) {
       console.error("Failed to read clipboard:", err)
@@ -137,35 +130,27 @@ export function ImportInstanceDialog({
     }
   }
 
-  const handleStartDownload = async () => {
-    if (!magnetUri.startsWith("magnet:")) {
-      setError(t("sharing.invalidMagnetLink"))
+  const handleFetchManifest = async () => {
+    if (!shareUrl.startsWith("http://") && !shareUrl.startsWith("https://")) {
+      setError(t("sharing.invalidShareLink"))
       return
     }
 
-    setStep("downloading")
+    setStep("fetching")
     setError(null)
 
     try {
-      // Get temp directory from backend
-      const tempDir = await invoke<string>("get_sharing_temp_dir")
-
-      // Start WebTorrent download
-      await webtorrentClient.download(magnetUri, tempDir, {
-        onProgress: (progress) => {
-          setDownloadProgress(progress)
-        },
-        onComplete: async (filePath) => {
-          setDownloadedFilePath(filePath)
-          // Validate and preview
-          await handlePreviewPackage(filePath)
-        },
-        onError: (err) => {
-          setError(err.message)
-          setStep("input")
-        },
+      // Fetch manifest from the share URL
+      const manifest = await invoke<SharingManifest>("fetch_share_manifest", {
+        shareUrl: shareUrl,
       })
+
+      setManifest(manifest)
+      setCurrentImport(manifest)
+      setNewName(manifest.instance.name)
+      setStep("preview")
     } catch (err) {
+      console.error("Failed to fetch manifest:", err)
       setError(err instanceof Error ? err.message : String(err))
       setStep("input")
     }
@@ -177,7 +162,7 @@ export function ImportInstanceDialog({
       return
     }
 
-    setStep("downloading") // Reuse loading state
+    setStep("fetching")
     await handlePreviewPackage(localFilePath)
   }
 
@@ -199,16 +184,29 @@ export function ImportInstanceDialog({
   }
 
   const handleImport = async () => {
-    if (!downloadedFilePath) return
-
-    setStep("importing")
+    setStep("downloading")
     setError(null)
 
     try {
-      await invoke("import_instance", {
-        packagePath: downloadedFilePath,
-        newName: newName !== manifest?.instance.name ? newName : null,
-      })
+      if (inputMode === "url") {
+        // Download and import from URL
+        // Build the download URL (the share URL + /download)
+        const downloadUrl = shareUrl.endsWith("/")
+          ? `${shareUrl}download`
+          : `${shareUrl}/download`
+
+        await invoke("download_and_import_share", {
+          shareUrl: downloadUrl,
+          newName: newName !== manifest?.instance.name ? newName : null,
+        })
+      } else {
+        // Import from local file
+        setStep("importing")
+        await invoke("import_instance", {
+          packagePath: downloadedFilePath,
+          newName: newName !== manifest?.instance.name ? newName : null,
+        })
+      }
 
       setStep("complete")
       setCurrentImport(null)
@@ -220,15 +218,15 @@ export function ImportInstanceDialog({
   }
 
   const renderContent = () => {
-    // Step: Input (magnet or file)
+    // Step: Input (URL or file)
     if (step === "input") {
       return (
         <div className="space-y-4">
-          <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as "magnet" | "file")}>
+          <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as "url" | "file")}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="magnet" className="flex items-center gap-2">
-                <Download className="h-4 w-4" />
-                {t("sharing.fromP2P")}
+              <TabsTrigger value="url" className="flex items-center gap-2">
+                <Link2 className="h-4 w-4" />
+                {t("sharing.fromUrl")}
               </TabsTrigger>
               <TabsTrigger value="file" className="flex items-center gap-2">
                 <FileArchive className="h-4 w-4" />
@@ -236,14 +234,14 @@ export function ImportInstanceDialog({
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="magnet" className="space-y-4 mt-4">
+            <TabsContent value="url" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>{t("sharing.magnetLink")}</Label>
+                <Label>{t("sharing.shareLink")}</Label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="magnet:?xt=urn:btih:..."
-                    value={magnetUri}
-                    onChange={(e) => setMagnetUri(e.target.value)}
+                    placeholder="https://..."
+                    value={shareUrl}
+                    onChange={(e) => setShareUrl(e.target.value)}
                     className="font-mono text-sm"
                   />
                   <Button variant="outline" size="icon" onClick={handlePasteFromClipboard}>
@@ -251,7 +249,7 @@ export function ImportInstanceDialog({
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {t("sharing.magnetLinkHelp")}
+                  {t("sharing.shareLinkHelp")}
                 </p>
               </div>
             </TabsContent>
@@ -288,42 +286,30 @@ export function ImportInstanceDialog({
       )
     }
 
+    // Step: Fetching manifest
+    if (step === "fetching") {
+      return (
+        <div className="py-8 space-y-4">
+          <div className="flex flex-col items-center">
+            <Loader2 className="h-12 w-12 text-primary mb-4 animate-spin" />
+            <p className="font-medium">{t("sharing.fetchingManifest")}</p>
+          </div>
+        </div>
+      )
+    }
+
     // Step: Downloading
     if (step === "downloading") {
       return (
         <div className="py-8 space-y-4">
           <div className="flex flex-col items-center">
             <Download className="h-12 w-12 text-primary mb-4 animate-bounce" />
-            <p className="font-medium">
-              {downloadProgress ? t("sharing.downloading") : t("sharing.connecting")}
+            <p className="font-medium">{t("sharing.downloading")}</p>
+            <p className="text-sm text-muted-foreground">
+              {manifest ? formatBytes(manifest.total_size_bytes) : ""}
             </p>
-            {downloadProgress && (
-              <p className="text-sm text-muted-foreground">
-                {Math.round(downloadProgress.progress * 100)}% - {formatSpeed(downloadProgress.downloadSpeed)}
-              </p>
-            )}
           </div>
-          <Progress value={(downloadProgress?.progress || 0) * 100} className="h-2" />
-          {downloadProgress && (
-            <div className="grid grid-cols-3 gap-4 text-center text-sm text-muted-foreground">
-              <div>
-                <p className="font-medium text-foreground">{downloadProgress.numPeers}</p>
-                <p>{t("sharing.peers")}</p>
-              </div>
-              <div>
-                <p className="font-medium text-foreground">{formatBytes(downloadProgress.downloaded)}</p>
-                <p>{t("sharing.downloaded")}</p>
-              </div>
-              <div>
-                <p className="font-medium text-foreground">
-                  {downloadProgress.timeRemaining
-                    ? `${Math.round(downloadProgress.timeRemaining / 1000)}s`
-                    : "..."}
-                </p>
-                <p>{t("sharing.remaining")}</p>
-              </div>
-            </div>
-          )}
+          <Progress value={50} className="h-2 animate-pulse" />
         </div>
       )
     }
@@ -440,8 +426,8 @@ export function ImportInstanceDialog({
   }
 
   const canProceed = () => {
-    if (inputMode === "magnet") {
-      return magnetUri.startsWith("magnet:")
+    if (inputMode === "url") {
+      return shareUrl.startsWith("http://") || shareUrl.startsWith("https://")
     }
     return !!localFilePath
   }
@@ -453,9 +439,6 @@ export function ImportInstanceDialog({
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
             {t("sharing.importTitle")}
-            <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/30">
-              Early Beta
-            </span>
           </DialogTitle>
           <DialogDescription>
             {t("sharing.importDescription")}
@@ -471,13 +454,13 @@ export function ImportInstanceDialog({
                 {t("common.cancel")}
               </Button>
               <Button
-                onClick={inputMode === "magnet" ? handleStartDownload : handlePreviewFile}
+                onClick={inputMode === "url" ? handleFetchManifest : handlePreviewFile}
                 disabled={!canProceed()}
               >
-                {inputMode === "magnet" ? (
+                {inputMode === "url" ? (
                   <>
                     <Download className="h-4 w-4 mr-2" />
-                    {t("sharing.startDownload")}
+                    {t("sharing.fetchPreview")}
                   </>
                 ) : (
                   <>
@@ -489,7 +472,7 @@ export function ImportInstanceDialog({
             </>
           )}
 
-          {step === "downloading" && (
+          {(step === "fetching" || step === "downloading") && (
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               {t("common.cancel")}
             </Button>

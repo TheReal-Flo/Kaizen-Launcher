@@ -11,10 +11,11 @@ import {
   Image,
   Layers,
   Map,
-  Users,
   Upload,
   QrCode,
   X,
+  Link,
+  Download,
 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { useTranslation } from "@/i18n"
@@ -31,7 +32,31 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { useSharingStore, type ExportableContent, type ExportOptions, type PreparedExport, type SharingProgress } from "@/stores/sharingStore"
-import { webtorrentClient, type SeedInfo } from "@/lib/webtorrent"
+
+interface ActiveShare {
+  share_id: string
+  instance_name: string
+  package_path: string
+  local_port: number
+  public_url: string | null
+  download_count: number
+  uploaded_bytes: number
+  started_at: string
+  file_size: number
+}
+
+interface ShareStatusEvent {
+  share_id: string
+  status: string
+  public_url: string | null
+  error: string | null
+}
+
+interface ShareDownloadEvent {
+  share_id: string
+  download_count: number
+  uploaded_bytes: number
+}
 
 interface ExportInstanceDialogProps {
   open: boolean
@@ -40,7 +65,7 @@ interface ExportInstanceDialogProps {
   instanceName: string
 }
 
-type ExportStep = "select" | "preparing" | "seeding" | "ready"
+type ExportStep = "select" | "preparing" | "tunneling" | "ready"
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
@@ -66,7 +91,7 @@ export function ExportInstanceDialog({
   const [exportableContent, setExportableContent] = useState<ExportableContent | null>(null)
   const [progress, setProgress] = useState<SharingProgress | null>(null)
   const [preparedExport, setPreparedExport] = useState<PreparedExport | null>(null)
-  const [seedInfo, setSeedInfo] = useState<SeedInfo | null>(null)
+  const [activeShare, setActiveShare] = useState<ActiveShare | null>(null)
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
 
@@ -88,7 +113,7 @@ export function ExportInstanceDialog({
       setError(null)
       setProgress(null)
       setPreparedExport(null)
-      setSeedInfo(null)
+      setActiveShare(null)
       setCopied(false)
       setShowQR(false)
     }
@@ -97,15 +122,37 @@ export function ExportInstanceDialog({
 
   // Listen for progress events
   useEffect(() => {
-    const unlisten = listen<SharingProgress>("sharing-progress", (event) => {
+    const unlistenProgress = listen<SharingProgress>("sharing-progress", (event) => {
       setProgress(event.payload)
       setExportProgress(event.payload)
     })
 
+    const unlistenStatus = listen<ShareStatusEvent>("share-status", (event) => {
+      if (activeShare && event.payload.share_id === activeShare.share_id) {
+        if (event.payload.status === "connected" && event.payload.public_url) {
+          setActiveShare((prev) => prev ? { ...prev, public_url: event.payload.public_url } : null)
+        } else if (event.payload.status === "error" && event.payload.error) {
+          setError(event.payload.error)
+        }
+      }
+    })
+
+    const unlistenDownload = listen<ShareDownloadEvent>("share-download", (event) => {
+      if (activeShare && event.payload.share_id === activeShare.share_id) {
+        setActiveShare((prev) => prev ? {
+          ...prev,
+          download_count: event.payload.download_count,
+          uploaded_bytes: event.payload.uploaded_bytes,
+        } : null)
+      }
+    })
+
     return () => {
-      unlisten.then((fn) => fn())
+      unlistenProgress.then((fn) => fn())
+      unlistenStatus.then((fn) => fn())
+      unlistenDownload.then((fn) => fn())
     }
-  }, [setExportProgress])
+  }, [setExportProgress, activeShare])
 
   const fetchExportableContent = async () => {
     setIsLoading(true)
@@ -145,24 +192,24 @@ export function ExportInstanceDialog({
 
       setPreparedExport(result)
       setCurrentExport(result)
-      setStep("seeding")
+      setStep("tunneling")
 
-      // Start seeding via WebTorrent
-      const info = await webtorrentClient.seed(result.package_path, {
-        name: `${instanceName}.kaizen`,
-        onProgress: (p) => {
-          console.log("[Seeding] Peers:", p.numPeers, "Uploaded:", formatBytes(p.uploaded))
-        },
+      // Start sharing via HTTP tunnel (Bore)
+      const share = await invoke<ActiveShare>("start_share", {
+        packagePath: result.package_path,
+        instanceName,
       })
 
-      setSeedInfo(info)
+      setActiveShare(share)
+
+      // Add to store for sidebar badge
       addSeed({
         exportId: result.export_id,
         instanceName,
         packagePath: result.package_path,
-        magnetUri: info.magnetURI,
-        peerCount: info.numPeers,
-        uploadedBytes: info.uploaded,
+        magnetUri: share.public_url || "", // Use public_url instead of magnet
+        peerCount: 0,
+        uploadedBytes: 0,
         startedAt: Date.now(),
       })
 
@@ -173,27 +220,31 @@ export function ExportInstanceDialog({
     }
   }
 
-  const handleCopyMagnet = useCallback(async () => {
-    if (!seedInfo?.magnetURI) return
+  const handleCopyLink = useCallback(async () => {
+    if (!activeShare?.public_url) return
     try {
-      await navigator.clipboard.writeText(seedInfo.magnetURI)
+      await navigator.clipboard.writeText(activeShare.public_url)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error("Failed to copy:", err)
     }
-  }, [seedInfo?.magnetURI])
+  }, [activeShare?.public_url])
 
   const handleClose = async () => {
-    // If we're seeding, keep it running in background
-    // User can stop it from the main UI later
+    // If we're sharing, keep it running in background
+    // User can stop it from the Sharing page later
     onOpenChange(false)
   }
 
   const handleStopAndClose = async () => {
-    // Stop seeding and cleanup
-    if (seedInfo) {
-      webtorrentClient.stopSeed(seedInfo.infoHash)
+    // Stop sharing and cleanup
+    if (activeShare) {
+      try {
+        await invoke("stop_share", { shareId: activeShare.share_id })
+      } catch (err) {
+        console.error("Stop share error:", err)
+      }
     }
     if (preparedExport) {
       try {
@@ -396,69 +447,80 @@ export function ExportInstanceDialog({
       )
     }
 
-    // Step: Seeding (waiting for P2P)
-    if (step === "seeding") {
+    // Step: Creating tunnel
+    if (step === "tunneling") {
       return (
         <div className="py-8 space-y-4">
           <div className="flex flex-col items-center">
-            <Upload className="h-12 w-12 text-primary mb-4 animate-bounce" />
-            <p className="font-medium">{t("sharing.startingP2P")}</p>
-            <p className="text-sm text-muted-foreground">{t("sharing.connectingToPeers")}</p>
+            <Link className="h-12 w-12 text-primary mb-4 animate-bounce" />
+            <p className="font-medium">{t("sharing.creatingTunnel")}</p>
+            <p className="text-sm text-muted-foreground">{t("sharing.waitingForUrl")}</p>
           </div>
-          <Progress value={50} className="h-2 animate-pulse" />
+          <Progress value={75} className="h-2 animate-pulse" />
         </div>
       )
     }
 
-    // Step: Ready (seeding active)
-    if (step === "ready" && seedInfo) {
+    // Step: Ready (sharing active)
+    if (step === "ready" && activeShare) {
+      const shareUrl = activeShare.public_url
+
       return (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-            <Check className="h-5 w-5 text-green-500" />
-            <span className="text-green-500 font-medium">{t("sharing.readyToShare")}</span>
-          </div>
-
-          {/* Magnet Link */}
-          <div className="space-y-2">
-            <Label>{t("sharing.magnetLink")}</Label>
-            <div className="flex gap-2">
-              <div className="flex-1 p-2 rounded-md bg-muted font-mono text-xs break-all max-h-20 overflow-y-auto">
-                {seedInfo.magnetURI}
+          {shareUrl ? (
+            <>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                <Check className="h-5 w-5 text-green-500" />
+                <span className="text-green-500 font-medium">{t("sharing.readyToShare")}</span>
               </div>
-              <Button size="icon" variant="outline" onClick={handleCopyMagnet}>
-                {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-              </Button>
-              <Button size="icon" variant="outline" onClick={() => setShowQR(!showQR)}>
-                <QrCode className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
 
-          {/* QR Code */}
-          {showQR && (
-            <div className="flex justify-center p-4 rounded-lg bg-white">
-              <QRCodeSVG value={seedInfo.magnetURI} size={200} />
+              {/* Share Link */}
+              <div className="space-y-2">
+                <Label>{t("sharing.shareLink")}</Label>
+                <div className="flex gap-2">
+                  <div className="flex-1 p-2 rounded-md bg-muted font-mono text-sm break-all">
+                    {shareUrl}
+                  </div>
+                  <Button size="icon" variant="outline" onClick={handleCopyLink}>
+                    {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                  <Button size="icon" variant="outline" onClick={() => setShowQR(!showQR)}>
+                    <QrCode className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* QR Code */}
+              {showQR && (
+                <div className="flex justify-center p-4 rounded-lg bg-white">
+                  <QRCodeSVG value={shareUrl} size={200} />
+                </div>
+              )}
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="p-3 rounded-lg border text-center">
+                  <Download className="h-5 w-5 mx-auto text-primary mb-1" />
+                  <p className="text-2xl font-bold">{activeShare.download_count}</p>
+                  <p className="text-xs text-muted-foreground">{t("sharing.downloads")}</p>
+                </div>
+                <div className="p-3 rounded-lg border text-center">
+                  <Upload className="h-5 w-5 mx-auto text-primary mb-1" />
+                  <p className="text-2xl font-bold">{formatBytes(activeShare.uploaded_bytes)}</p>
+                  <p className="text-xs text-muted-foreground">{t("sharing.uploaded")}</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center">
+                {t("sharing.keepOpenToShare")}
+              </p>
+            </>
+          ) : (
+            <div className="flex flex-col items-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+              <p className="text-sm text-muted-foreground">{t("sharing.waitingForUrl")}</p>
             </div>
           )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="p-3 rounded-lg border text-center">
-              <Users className="h-5 w-5 mx-auto text-primary mb-1" />
-              <p className="text-2xl font-bold">{seedInfo.numPeers}</p>
-              <p className="text-xs text-muted-foreground">{t("sharing.peers")}</p>
-            </div>
-            <div className="p-3 rounded-lg border text-center">
-              <Upload className="h-5 w-5 mx-auto text-primary mb-1" />
-              <p className="text-2xl font-bold">{formatBytes(seedInfo.uploaded)}</p>
-              <p className="text-xs text-muted-foreground">{t("sharing.uploaded")}</p>
-            </div>
-          </div>
-
-          <p className="text-xs text-muted-foreground text-center">
-            {t("sharing.keepOpenToSeed")}
-          </p>
         </div>
       )
     }
@@ -473,9 +535,6 @@ export function ExportInstanceDialog({
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
             {t("sharing.exportTitle")}
-            <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/30">
-              Early Beta
-            </span>
           </DialogTitle>
           <DialogDescription>
             {instanceName}
@@ -500,7 +559,7 @@ export function ExportInstanceDialog({
             </>
           )}
 
-          {(step === "preparing" || step === "seeding") && (
+          {(step === "preparing" || step === "tunneling") && (
             <Button variant="outline" disabled>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               {t("sharing.preparing")}

@@ -19,7 +19,9 @@ mod tunnel;
 mod updater;
 mod utils;
 
+use sharing::RunningShares;
 use state::{AppState, SharedState};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::RwLock;
@@ -96,6 +98,10 @@ pub fn run() {
 
             let shared_state: SharedState = Arc::new(RwLock::new(state));
             app.handle().manage(shared_state.clone());
+
+            // Initialize RunningShares state for tunnel-based sharing
+            let running_shares: RunningShares = Arc::new(RwLock::new(HashMap::new()));
+            app.handle().manage(running_shares);
 
             info!("Application initialized successfully");
 
@@ -259,6 +265,13 @@ pub fn run() {
             sharing::commands::validate_import_package,
             sharing::commands::import_instance,
             sharing::commands::get_sharing_temp_dir,
+            // Tunnel-based sharing commands
+            sharing::commands::start_share,
+            sharing::commands::stop_share,
+            sharing::commands::get_active_shares,
+            sharing::commands::stop_all_shares,
+            sharing::commands::download_and_import_share,
+            sharing::commands::fetch_share_manifest,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
