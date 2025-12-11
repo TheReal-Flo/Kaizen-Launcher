@@ -15,7 +15,8 @@ import {
   Bell,
   Bug,
   Wrench,
-  FileCode
+  FileCode,
+  Monitor
 } from "lucide-react"
 import { useTranslation } from "@/i18n"
 
@@ -32,6 +33,21 @@ interface ChangelogEntry {
 }
 
 const changelog: ChangelogEntry[] = [
+  {
+    version: "0.3.8",
+    date: "2024-12-11",
+    highlights: [
+      "Windows Discord Rich Presence support",
+    ],
+    features: [
+      {
+        icon: <Monitor className="h-5 w-5" />,
+        title: "Windows Discord Rich Presence",
+        description: "Discord Rich Presence now works on Windows using named pipes. Show your activity on Discord when playing Minecraft on Windows.",
+        tag: "fix",
+      },
+    ],
+  },
   {
     version: "0.3.7",
     date: "2024-12-11",

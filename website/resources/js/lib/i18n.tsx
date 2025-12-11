@@ -1,11 +1,4 @@
-import {
-    createContext,
-    ReactNode,
-    useCallback,
-    useContext,
-    useEffect,
-    useState,
-} from 'react';
+import { createContext, ReactNode, useCallback, useContext, useState } from 'react';
 
 export type Locale = 'en' | 'fr';
 
@@ -232,13 +225,7 @@ function getInitialLocale(): Locale {
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-    const [locale, setLocaleState] = useState<Locale>('en');
-    const [isHydrated, setIsHydrated] = useState(false);
-
-    useEffect(() => {
-        setLocaleState(getInitialLocale());
-        setIsHydrated(true);
-    }, []);
+    const [locale, setLocaleState] = useState<Locale>(() => getInitialLocale());
 
     const setLocale = useCallback((newLocale: Locale) => {
         setLocaleState(newLocale);
@@ -246,14 +233,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const t = translations[locale];
-
-    if (!isHydrated) {
-        return (
-            <I18nContext.Provider value={{ locale: 'en', setLocale, t: translations.en }}>
-                {children}
-            </I18nContext.Provider>
-        );
-    }
 
     return (
         <I18nContext.Provider value={{ locale, setLocale, t }}>
